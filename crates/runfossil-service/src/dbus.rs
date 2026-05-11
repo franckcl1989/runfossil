@@ -253,3 +253,137 @@ fn read_method_return(stream: &mut UnixStream) -> io::Result<Vec<u8>> {
 
     Ok(body)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn build_method_call_starts_with_little_endian() {
+        let msg = build_method_call(
+            1u32,
+            "org.freedesktop.systemd1",
+            "/org/freedesktop/systemd1",
+            "org.freedesktop.systemd1.Manager",
+            "ListUnits",
+            &[],
+        )
+        .expect("build method call");
+        assert_eq!(msg[0], b'l');
+    }
+
+    #[test]
+    fn build_method_call_message_type_is_method_call() {
+        let msg = build_method_call(
+            1u32,
+            "org.freedesktop.systemd1",
+            "/org/freedesktop/systemd1",
+            "org.freedesktop.systemd1.Manager",
+            "ListUnits",
+            &[],
+        )
+        .expect("build method call");
+        assert_eq!(msg[1], MSG_TYPE_METHOD_CALL);
+    }
+
+    #[test]
+    fn build_method_call_includes_serial() {
+        let msg = build_method_call(42u32, "dest", "/path", "iface", "member", &[])
+            .expect("build method call");
+        let serial = u32::from_ne_bytes([msg[8], msg[9], msg[10], msg[11]]);
+        assert_eq!(serial, 42);
+    }
+
+    #[test]
+    fn build_method_call_header_fields_contain_path() {
+        let msg = build_method_call(1u32, "dest", "/org/test", "iface", "member", &[])
+            .expect("build method call");
+        let body = String::from_utf8_lossy(&msg);
+        assert!(body.contains("/org/test"));
+    }
+
+    #[test]
+    fn build_method_call_header_fields_contain_member() {
+        let msg = build_method_call(1u32, "dest", "/path", "iface", "ListUnits", &[])
+            .expect("build method call");
+        let body = String::from_utf8_lossy(&msg);
+        assert!(body.contains("ListUnits"));
+    }
+
+    #[test]
+    fn build_method_call_with_string_args_includes_args_in_body() {
+        let msg = build_method_call(1u32, "dest", "/path", "iface", "member", &["arg1"])
+            .expect("build method call");
+        let body = String::from_utf8_lossy(&msg);
+        assert!(body.contains("arg1"));
+    }
+
+    #[test]
+    fn build_method_call_body_length_is_correct() {
+        let msg = build_method_call(
+            1u32,
+            "org.freedesktop.systemd1",
+            "/org/freedesktop/systemd1",
+            "org.freedesktop.systemd1.Manager",
+            "ListUnits",
+            &[],
+        )
+        .expect("build method call");
+        let body_len = u32::from_ne_bytes([msg[4], msg[5], msg[6], msg[7]]);
+        assert_eq!(body_len, 0);
+    }
+
+    #[test]
+    fn build_method_call_with_args_has_nonzero_body_length() {
+        let msg = build_method_call(
+            1u32,
+            "dest",
+            "/path",
+            "iface",
+            "member",
+            &["unit1", "unit2"],
+        )
+        .expect("build method call");
+        let body_len = u32::from_ne_bytes([msg[4], msg[5], msg[6], msg[7]]);
+        assert!(body_len > 0);
+    }
+
+    #[test]
+    fn build_method_call_field_array_length_is_set() {
+        let msg = build_method_call(1u32, "dest", "/path", "iface", "member", &[])
+            .expect("build method call");
+        let fields_len = u32::from_ne_bytes([msg[12], msg[13], msg[14], msg[15]]);
+        assert!(fields_len > 0);
+    }
+
+    #[test]
+    fn align_up_maps_to_boundaries() {
+        assert_eq!(align_up(0, 8), 0);
+        assert_eq!(align_up(1, 8), 8);
+        assert_eq!(align_up(8, 8), 8);
+        assert_eq!(align_up(9, 8), 16);
+        assert_eq!(align_up(0, 4), 0);
+        assert_eq!(align_up(3, 4), 4);
+        assert_eq!(align_up(4, 4), 4);
+        assert_eq!(align_up(5, 4), 8);
+    }
+
+    #[test]
+    fn aligned_writer_write_u8_and_u32() {
+        let mut w = AlignedWriter::new(8);
+        w.write_u8(0x42);
+        w.write_u32(0xDEAD_BEEF);
+        let buf = w.into_inner();
+        assert_eq!(buf[0], 0x42);
+        let val = u32::from_ne_bytes([buf[4], buf[5], buf[6], buf[7]]);
+        assert_eq!(val, 0xDEAD_BEEF);
+    }
+
+    #[test]
+    fn aligned_writer_pads_to_alignment() {
+        let mut w = AlignedWriter::new(8);
+        w.write_u8(1);
+        w.write_u8(2);
+        assert!(w.into_inner().len() >= 2);
+    }
+}

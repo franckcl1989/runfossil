@@ -206,3 +206,70 @@ fn build_nl_request(msg_type: u16, body_bytes: usize, pid: u32) -> Vec<u8> {
 
     msg
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn build_nl_request_correct_total_length() {
+        let msg = build_nl_request(RTM_GETLINK, 16, 1);
+        assert_eq!(msg.len(), 16 + 16);
+    }
+
+    #[test]
+    fn build_nl_request_length_field_is_first_four_bytes() {
+        let msg = build_nl_request(RTM_GETLINK, 16, 1);
+        let total_len = u32::from_ne_bytes([msg[0], msg[1], msg[2], msg[3]]);
+        assert_eq!(total_len as usize, msg.len());
+    }
+
+    #[test]
+    fn build_nl_request_msg_type_in_header() {
+        let msg = build_nl_request(RTM_GETADDR, 8, 1);
+        let msg_type = u16::from_ne_bytes([msg[4], msg[5]]);
+        assert_eq!(msg_type, RTM_GETADDR);
+    }
+
+    #[test]
+    fn build_nl_request_flags_include_request_and_dump() {
+        let msg = build_nl_request(RTM_GETROUTE, 12, 1);
+        let flags = u16::from_ne_bytes([msg[6], msg[7]]);
+        assert_eq!(flags, NLM_F_REQUEST | NLM_F_DUMP);
+    }
+
+    #[test]
+    fn build_nl_request_includes_pid() {
+        let msg = build_nl_request(RTM_GETLINK, 16, 42);
+        let pid = u32::from_ne_bytes([msg[12], msg[13], msg[14], msg[15]]);
+        assert_eq!(pid, 42);
+    }
+
+    #[test]
+    fn build_nl_request_sequence_is_one() {
+        let msg = build_nl_request(RTM_GETLINK, 16, 1);
+        let seq = u32::from_ne_bytes([msg[8], msg[9], msg[10], msg[11]]);
+        assert_eq!(seq, 1);
+    }
+
+    #[test]
+    fn build_nl_request_all_four_msg_types() {
+        for (msg_type, body_bytes) in &[
+            (RTM_GETLINK, 16),
+            (RTM_GETADDR, 8),
+            (RTM_GETROUTE, 12),
+            (RTM_GETNEIGH, 12),
+        ] {
+            let msg = build_nl_request(*msg_type, *body_bytes, 1);
+            assert_eq!(msg.len(), 16 + body_bytes);
+            let parsed_type = u16::from_ne_bytes([msg[4], msg[5]]);
+            assert_eq!(parsed_type, *msg_type);
+        }
+    }
+
+    #[test]
+    fn nlmsg_done_and_multi_flags_are_distinct() {
+        assert_ne!(NLMSG_DONE, NLM_F_MULTI);
+        assert_ne!(NLMSG_DONE, 0);
+    }
+}

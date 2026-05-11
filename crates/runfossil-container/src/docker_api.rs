@@ -184,3 +184,78 @@ fn validate_http_status(response: &[u8], headers_end: usize) -> Result<(), std::
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn find_headers_end_simple() {
+        let data = b"HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhello";
+        let pos = find_headers_end(data);
+        assert_eq!(pos, Some(34));
+    }
+
+    #[test]
+    fn find_headers_end_not_found() {
+        let data = b"HTTP/1.1 200 OK\r\n";
+        let pos = find_headers_end(data);
+        assert_eq!(pos, None);
+    }
+
+    #[test]
+    fn parse_content_length_present() {
+        let headers = b"Content-Length: 1234\r\nContent-Type: application/json\r\n";
+        let cl = parse_content_length(headers);
+        assert_eq!(cl, Some(1234));
+    }
+
+    #[test]
+    fn parse_content_length_case_insensitive() {
+        let headers = b"content-length: 42\r\n\r\n";
+        let cl = parse_content_length(headers);
+        assert_eq!(cl, Some(42));
+    }
+
+    #[test]
+    fn parse_content_length_missing() {
+        let headers = b"Transfer-Encoding: chunked\r\n\r\n";
+        let cl = parse_content_length(headers);
+        assert_eq!(cl, None);
+    }
+
+    #[test]
+    fn validate_http_status_200_ok() {
+        let response = b"HTTP/1.1 200 OK\r\n\r\nbody";
+        assert!(validate_http_status(response, 15).is_ok());
+    }
+
+    #[test]
+    fn validate_http_status_401_permission_denied() {
+        let response = b"HTTP/1.1 401 Unauthorized\r\n\r\n";
+        let result = validate_http_status(response, 27);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::PermissionDenied);
+    }
+
+    #[test]
+    fn validate_http_status_403_permission_denied() {
+        let response = b"HTTP/1.1 403 Forbidden\r\n\r\n";
+        let result = validate_http_status(response, 22);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::PermissionDenied);
+    }
+
+    #[test]
+    fn validate_http_status_500_still_ok() {
+        let response = b"HTTP/1.1 500 Internal Server Error\r\n\r\n";
+        assert!(validate_http_status(response, 36).is_ok());
+    }
+
+    #[test]
+    fn detect_docker_does_not_panic() {
+        let _result = detect_docker();
+    }
+}

@@ -403,4 +403,163 @@ mod tests {
         assert_eq!(ObjectKind::NativeDump.as_str(), "native_dump");
         assert_eq!(SourceSlug::Container.as_str(), "container");
     }
+
+    #[test]
+    fn coverage_decision_all_variants_have_nonempty_str() {
+        let variants = [
+            CoverageDecision::Collect,
+            CoverageDecision::Limited,
+            CoverageDecision::Exclude,
+            CoverageDecision::DeferredNative,
+            CoverageDecision::Conditional,
+        ];
+        for v in &variants {
+            assert!(!v.as_str().is_empty());
+        }
+    }
+
+    #[test]
+    fn plan_decision_all_variants_have_nonempty_str() {
+        let variants = [
+            PlanDecision::Scheduled,
+            PlanDecision::Limited,
+            PlanDecision::SkippedByPolicy,
+            PlanDecision::NotPresent,
+            PlanDecision::Unsupported,
+        ];
+        for v in &variants {
+            assert!(!v.as_str().is_empty());
+        }
+    }
+
+    #[test]
+    fn manifest_status_all_variants_have_nonempty_str() {
+        let variants = [
+            ManifestStatus::Captured,
+            ManifestStatus::Vanished,
+            ManifestStatus::NotFound,
+            ManifestStatus::PermissionDenied,
+            ManifestStatus::Timeout,
+            ManifestStatus::SizeLimited,
+            ManifestStatus::Truncated,
+            ManifestStatus::SkippedByPolicy,
+            ManifestStatus::Unsupported,
+            ManifestStatus::IoError,
+        ];
+        for v in &variants {
+            assert!(!v.as_str().is_empty());
+        }
+    }
+
+    #[test]
+    fn priority_all_variants_have_nonempty_str() {
+        let variants = [
+            Priority::P0,
+            Priority::P1,
+            Priority::P2,
+            Priority::P3,
+            Priority::P4,
+            Priority::NotApplicable,
+        ];
+        for v in &variants {
+            assert!(!v.as_str().is_empty());
+        }
+    }
+
+    #[test]
+    fn object_kind_all_variants_have_nonempty_str() {
+        let variants = [
+            ObjectKind::File,
+            ObjectKind::FileSet,
+            ObjectKind::DirListing,
+            ObjectKind::Symlink,
+            ObjectKind::Metadata,
+            ObjectKind::MetadataOnly,
+            ObjectKind::BoundedTree,
+            ObjectKind::EventWindow,
+            ObjectKind::NativeDump,
+        ];
+        for v in &variants {
+            assert!(!v.as_str().is_empty());
+        }
+    }
+
+    #[test]
+    fn source_slug_all_variants_have_nonempty_str() {
+        for variant in SourceSlug::all() {
+            assert!(!variant.as_str().is_empty());
+        }
+    }
+
+    #[test]
+    fn source_slug_all_returns_fifteen_variants() {
+        assert_eq!(SourceSlug::all().len(), 15);
+    }
+
+    #[test]
+    fn effective_uid_root_is_zero() {
+        assert_eq!(EffectiveUid::ROOT.get(), 0);
+        assert!(EffectiveUid::ROOT.is_root());
+    }
+
+    #[test]
+    fn effective_uid_non_root_is_not_root() {
+        let uid = EffectiveUid::new(1000);
+        assert_eq!(uid.get(), 1000);
+        assert!(!uid.is_root());
+    }
+
+    #[test]
+    fn effective_uid_display_formats_as_number() {
+        assert_eq!(format!("{}", EffectiveUid::new(1000)), "1000");
+    }
+
+    #[test]
+    fn artifact_path_rejects_dot_dot_only() {
+        assert_eq!(
+            validate_relative_artifact_path(Path::new("..")),
+            Err(ArtifactPathError::ParentComponent)
+        );
+    }
+
+    #[test]
+    fn artifact_path_accepts_current_dir() {
+        assert!(validate_relative_artifact_path(Path::new(".")).is_ok());
+    }
+
+    #[test]
+    fn artifact_path_accepts_empty() {
+        assert!(validate_relative_artifact_path(Path::new("")).is_ok());
+    }
+
+    #[test]
+    fn artifact_path_rejects_prefix_on_windows_style_paths() {
+        #[cfg(windows)]
+        {
+            assert_eq!(
+                validate_relative_artifact_path(Path::new("C:\\windows\\path")),
+                Err(ArtifactPathError::Prefix)
+            );
+        }
+        #[cfg(not(windows))]
+        {
+            assert!(validate_relative_artifact_path(Path::new("any/relative/path")).is_ok());
+        }
+    }
+
+    #[test]
+    fn artifact_path_error_display() {
+        assert_eq!(
+            format!("{}", ArtifactPathError::Absolute),
+            "artifact path must be relative"
+        );
+        assert_eq!(
+            format!("{}", ArtifactPathError::ParentComponent),
+            "artifact path must not contain '..'"
+        );
+        assert_eq!(
+            format!("{}", ArtifactPathError::Prefix),
+            "artifact path must not contain a path prefix"
+        );
+    }
 }

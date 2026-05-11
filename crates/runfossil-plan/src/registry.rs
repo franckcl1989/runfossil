@@ -971,4 +971,113 @@ mod tests {
             "registry should include deferred-native entries"
         );
     }
+
+    #[test]
+    fn registry_has_all_seven_source_families() {
+        let units = coverage_registry();
+        let sources: Vec<SourceSlug> = units.iter().map(|u| u.source).collect();
+        let expected = [
+            SourceSlug::Proc,
+            SourceSlug::Sys,
+            SourceSlug::Dev,
+            SourceSlug::Kernel,
+            SourceSlug::Netlink,
+            SourceSlug::Service,
+            SourceSlug::Container,
+        ];
+        for source in &expected {
+            assert!(
+                sources.contains(source),
+                "registry should include source {source:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn coverage_units_have_non_empty_domain_and_object() {
+        for unit in &coverage_registry() {
+            assert!(
+                !unit.domain.is_empty(),
+                "coverage unit {} must have a domain",
+                unit.id
+            );
+            assert!(
+                !unit.object.is_empty(),
+                "coverage unit {} must have an object",
+                unit.id
+            );
+        }
+    }
+
+    #[test]
+    fn registry_has_conditional_entries() {
+        let units = coverage_registry();
+        let conditional: Vec<_> = units
+            .iter()
+            .filter(|u| u.coverage_decision == CoverageDecision::Conditional)
+            .collect();
+        assert!(
+            !conditional.is_empty(),
+            "registry should include conditional entries"
+        );
+    }
+
+    #[test]
+    fn p0_units_have_collect_decision() {
+        let units = coverage_registry();
+        for unit in &units {
+            if unit.priority == Priority::P0 {
+                assert_eq!(
+                    unit.coverage_decision,
+                    CoverageDecision::Collect,
+                    "P0 unit {} must have Collect decision",
+                    unit.id
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn all_coverage_decisions_present() {
+        let units = coverage_registry();
+        let mut decisions = Vec::new();
+        for unit in &units {
+            decisions.push(unit.coverage_decision);
+        }
+        assert!(decisions.iter().any(|d| *d == CoverageDecision::Collect));
+        assert!(
+            decisions
+                .iter()
+                .any(|d| *d == CoverageDecision::Conditional)
+        );
+        assert!(decisions.iter().any(|d| *d == CoverageDecision::Limited));
+        assert!(
+            decisions
+                .iter()
+                .any(|d| *d == CoverageDecision::DeferredNative)
+        );
+    }
+
+    #[test]
+    fn registry_unit_count_is_reasonable() {
+        let units = coverage_registry();
+        assert!(
+            units.len() >= 30,
+            "registry should have at least 30 coverage units, got {}",
+            units.len()
+        );
+    }
+
+    #[test]
+    fn no_duplicate_unit_ids() {
+        let units = coverage_registry();
+        let mut ids = std::collections::HashSet::new();
+        for unit in &units {
+            assert!(
+                ids.insert(&unit.id),
+                "duplicate coverage unit id: {}",
+                unit.id
+            );
+        }
+    }
 }
