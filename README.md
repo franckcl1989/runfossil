@@ -1,2 +1,39 @@
 # runfossil
-Pure Rust Linux runtime snapshot tool for incident forensics. Captures raw system, process, network, storage, cgroup, service, security, and container state with a modular, zero-runtime-dependency design for fast, reliable offline analysis.
+
+`runfossil` is a pure Rust Linux runtime snapshot tool for incident forensics.
+It captures raw system, process, network, storage, cgroup, service, security,
+and container runtime state before a reboot, process restart, or other recovery
+action destroys the original evidence.
+
+The project is intentionally raw-first: the capture path preserves runtime
+evidence for later offline analysis instead of trying to diagnose the incident
+on the production host.
+
+## Design Constraints
+
+- Rust 1.95 baseline.
+- Workspace architecture with modular collector crates.
+- Project-owned Rust code must use `#![forbid(unsafe_code)]`.
+- Root-only execution model.
+- No external command execution for collection.
+- Directory-first snapshot output, with packaging and compression as a separate
+  post-capture step.
+- No user-facing capture configuration in the normal path; the tool derives the
+  capture plan from current host state.
+
+## Documentation
+
+- [Project Design](docs/PROJECT_DESIGN.md)
+- [Architecture](docs/ARCHITECTURE.md)
+- [Snapshot Format v1](docs/SNAPSHOT_FORMAT_V1.md)
+- [Dynamic Capture Planner v1](docs/DYNAMIC_CAPTURE_PLANNER_V1.md)
+- [Source Taxonomy](docs/SOURCE_TAXONOMY.md)
+- [Safety and Operations](docs/SAFETY_AND_OPERATIONS.md)
+- [Design Decisions](docs/DESIGN_DECISIONS.md)
+- [Roadmap](docs/ROADMAP.md)
+
+## Current Status
+
+The repository is in the design phase. The current work defines the behavioral
+contracts, output format, collection boundaries, and implementation constraints
+before the Rust workspace and crates are introduced.
