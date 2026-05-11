@@ -69,8 +69,8 @@ the snapshot as partial.
 - Metadata and raw files are written through temporary files and then renamed
   into place.
 - `errors.jsonl` may be append-only during capture.
-- `manifest.json` and `plan.json` may be written initially as draft files, but
-  their final versions must be atomically replaced.
+- `manifest.json` and `plan.json` may be written initially as temporary
+  versions, but their final versions must be atomically replaced.
 - `CAPTURE_COMPLETE` is created only after final metadata is durable.
 
 The format should remain inspectable if the process is killed mid-capture.
@@ -254,8 +254,9 @@ Status meanings:
 - `permission_denied`: root was denied by kernel policy, LSM policy, or mount
   restrictions.
 - `timeout`: the task exceeded its time budget.
-- `size_limited`: the task was not read fully because it exceeded a size limit.
-- `truncated`: partial content was intentionally written.
+- `size_limited`: the object was not captured as content because its estimated
+  or observed size exceeded policy limits.
+- `truncated`: partial content was intentionally written within policy limits.
 - `skipped_by_policy`: the planner chose not to collect this object.
 - `unsupported`: the source exists but no native collector is implemented.
 - `io_error`: an unexpected I/O error occurred.

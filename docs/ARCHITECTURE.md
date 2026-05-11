@@ -218,17 +218,19 @@ should encode snapshot directory layout beyond stable object identity.
 The intended dependency direction is:
 
 ```text
-runfossil-cli
-  -> runfossil-core
-  -> runfossil-plan
-  -> runfossil-store
-  -> collector crates
-  -> runfossil-pack
+runfossil-cli        -> runfossil-core
+runfossil-cli        -> runfossil-plan
+runfossil-cli        -> runfossil-store
+runfossil-cli        -> collector crates
+runfossil-cli        -> runfossil-pack
 
-collector crates -> runfossil-core
-collector crates -> runfossil-fs when filesystem helpers are needed
-runfossil-plan -> runfossil-core
-runfossil-store -> runfossil-core
+runfossil-plan       -> runfossil-core
+runfossil-store      -> runfossil-core
+runfossil-fs         -> runfossil-core
+collector crates     -> runfossil-core
+collector crates     -> runfossil-fs when filesystem helpers are needed
+runfossil-pack       -> runfossil-core
+runfossil-pack       -> runfossil-store when snapshot layout helpers are needed
 ```
 
 Circular dependencies are not allowed.

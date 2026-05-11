@@ -35,7 +35,7 @@ Rationale:
 
 Consequence:
 
-- The CLI must fail early when effective UID is not zero.
+- The capture command must fail early when effective UID is not zero.
 - Permission failures can still occur and must be recorded in the manifest.
 
 ## Decision 3: Project-Owned Code Forbids Unsafe

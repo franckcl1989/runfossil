@@ -419,16 +419,11 @@ Collection policy:
 - Capture host-side process, namespace, and cgroup evidence even before full
   runtime protocol support exists.
 
-## Coverage Stages
+## Implementation Relationship
 
-Suggested implementation stages:
+This taxonomy defines source ownership and collection boundaries. Implementation
+order is maintained in the [Implementation Plan](IMPLEMENTATION_PLAN.md) so the
+project has one authoritative delivery plan.
 
-```text
-Stage 1: /proc, core /sys, /dev metadata, snapshot store, manifest.
-Stage 2: process deepening, cgroup, pstore, kernel ring buffer.
-Stage 3: netlink, service manager metadata, event windows.
-Stage 4: native service/container protocols.
-Stage 5: hardware management and specialized subsystem collectors.
-```
-
-Each stage should preserve the same snapshot format and manifest vocabulary.
+Every implementation milestone should preserve the same snapshot specification
+and manifest vocabulary.

@@ -14,7 +14,7 @@ on the production host.
 - Rust 1.95 baseline.
 - Workspace architecture with modular collector crates.
 - Project-owned Rust code must use `#![forbid(unsafe_code)]`.
-- Root-only execution model.
+- Root-only capture execution model.
 - No external command execution for collection.
 - Directory-first snapshot output, with packaging and compression as a separate
   post-capture step.

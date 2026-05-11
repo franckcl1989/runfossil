@@ -16,7 +16,7 @@ right now" and "we still need the runtime scene after recovery."
 
 `runfossil` is:
 
-- A root-only Linux runtime snapshot tool.
+- A root-only Linux runtime capture tool.
 - A raw evidence collector.
 - A fast and low-disturbance capture path.
 - A directory-first evidence package.
@@ -156,9 +156,9 @@ runfossil pack <snapshot-dir>
 runfossil inspect <snapshot-dir>
 ```
 
-`capture` creates the raw evidence directory. `pack` creates a compressed archive
-after capture. `inspect` validates and summarizes a snapshot without requiring
-the original host.
+`capture` creates the raw evidence directory and requires root. `pack` creates a
+compressed archive after capture. `inspect` validates and summarizes a snapshot
+without requiring the original host or root privileges.
 
 The capture path should remain useful even if only `capture` is implemented.
 Packaging and inspection must not be required to preserve evidence.
