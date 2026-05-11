@@ -82,8 +82,7 @@ pub fn pack_snapshot(snapshot_dir: &Path) -> io::Result<ArchiveMetadata> {
         .as_nanos();
 
     let uncompressed = build_tar(snapshot_dir)?;
-    let compressed = zstd::encode_all(&uncompressed[..], 3)
-        .map_err(io::Error::other)?;
+    let compressed = zstd::encode_all(&uncompressed[..], 3).map_err(io::Error::other)?;
 
     let mut hasher = Sha256::new();
     hasher.update(&compressed);
@@ -113,9 +112,7 @@ fn build_tar(snapshot_dir: &Path) -> io::Result<Vec<u8>> {
     {
         let mut builder = Builder::new(&mut buffer);
         append_dir_entries(&mut builder, snapshot_dir, snapshot_dir)?;
-        builder
-            .finish()
-            .map_err(io::Error::other)?;
+        builder.finish().map_err(io::Error::other)?;
     }
     Ok(buffer)
 }
@@ -129,9 +126,10 @@ fn append_dir_entries<W: Write>(
     let read_dir = match fs::read_dir(dir) {
         Ok(entries) => entries,
         Err(err) => {
-            return Err(io::Error::other(
-                format!("cannot read directory {}: {err}", dir.display()),
-            ));
+            return Err(io::Error::other(format!(
+                "cannot read directory {}: {err}",
+                dir.display()
+            )));
         }
     };
 
