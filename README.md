@@ -9,6 +9,11 @@ The project is intentionally raw-first: the capture path preserves runtime
 evidence for later offline analysis instead of trying to diagnose the incident
 on the production host.
 
+`runfossil` is designed for AI-driven development. All design documents, AI
+workflow instructions, skill specifications, and prompt templates are
+repository-owned and maintained as first-class project artifacts. AI coding
+agents should start from [AGENTS.md](AGENTS.md) for all repository work.
+
 ## Design Constraints
 
 - Rust 1.95 baseline.
@@ -23,6 +28,11 @@ on the production host.
 
 ## Documentation
 
+- [Design Constraints](#design-constraints)
+- [License](LICENSE)
+- [AI Agent Instructions](AGENTS.md)
+- [Claude Instructions](CLAUDE.md)
+- [Copilot Instructions](.github/copilot-instructions.md)
 - [Project Design](docs/PROJECT_DESIGN.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Snapshot Specification](docs/SNAPSHOT_SPECIFICATION.md)
@@ -34,11 +44,32 @@ on the production host.
 - [Glossary](docs/GLOSSARY.md)
 - [Risk Register](docs/RISK_REGISTER.md)
 - [Design Review Checklist](docs/DESIGN_REVIEW_CHECKLIST.md)
+- [Documentation Readiness Gate](docs/DOCUMENTATION_READINESS_GATE.md)
+- [Documentation Readiness Review](docs/DOCUMENTATION_READINESS_REVIEW.md)
 - [Architectural Decision Record](docs/ARCHITECTURAL_DECISION_RECORD.md)
 - [Implementation Plan](docs/IMPLEMENTATION_PLAN.md)
+- [AI Context Index](docs/AI_CONTEXT_INDEX.md)
+- [AI Development Guide](docs/AI_DEVELOPMENT_GUIDE.md)
+- [AI Skill Specs](docs/AI_SKILL_SPECS.md)
+- [AI Prompt Library](docs/AI_PROMPT_LIBRARY.md)
 
 ## Current Status
 
-The repository is in the design phase. The current work defines the behavioral
-contracts, output format, collection boundaries, and implementation constraints
-before the Rust workspace and crates are introduced.
+The repository has moved from the documentation-only design phase into Milestone
+1 implementation. A Rust 1.95 workspace skeleton and initial crate boundaries are
+now present.
+
+The design baseline defines behavioral contracts, output format, collection
+boundaries, vocabulary mappings, safety policy, and implementation constraints
+that the code must preserve.
+
+Milestone 0 passed the [Documentation Readiness Gate](docs/DOCUMENTATION_READINESS_GATE.md)
+and the [Design Review Checklist](docs/DESIGN_REVIEW_CHECKLIST.md) before code
+was introduced.
+
+The current readiness result is recorded in the
+[Documentation Readiness Review](docs/DOCUMENTATION_READINESS_REVIEW.md).
+
+AI tools should start from [AGENTS.md](AGENTS.md) and use the
+[AI Context Index](docs/AI_CONTEXT_INDEX.md) to choose task-specific design
+documents.

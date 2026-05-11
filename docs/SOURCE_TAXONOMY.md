@@ -21,6 +21,21 @@ Runtime execution adds:
 L4. Capture Task
 ```
 
+## L3 Object Policy
+
+This taxonomy owns source boundaries and object families. It intentionally avoids
+field-level duplication for raw files whose internal fields are already preserved
+as bytes. For example, `/proc/stat` is one raw snapshot object family even though
+it contains many counters.
+
+An L3 raw snapshot object is considered assigned when exactly one row in the
+Coverage Decision Matrix names the object, its path family, or its source domain
+as the primary coverage unit. If two rows can cover the same object, one row must
+be documented as a fallback, supplement, or derived view.
+
+This keeps the design auditable without turning the taxonomy into a copy of Linux
+kernel documentation.
+
 ## Scope Boundary
 
 Included sources are Linux system-level runtime data that can change or
@@ -429,3 +444,11 @@ has one authoritative delivery plan.
 
 Every implementation milestone should preserve the same snapshot specification
 and manifest vocabulary.
+
+When a new source is proposed, the design is incomplete until:
+
+- the L1 owner and L2 domain are clear;
+- the L3 object family has a primary coverage unit;
+- safety limits or exclusions are explicit;
+- the planner can represent scheduled, limited, skipped, unsupported, and
+  not-present outcomes without inventing new vocabulary.

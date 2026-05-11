@@ -17,7 +17,8 @@ production impact.
 - Give every task an explicit budget.
 - Adapt to host scale and pressure.
 - Deepen collection only when value justifies cost.
-- Record why each task was scheduled, limited, skipped, or unsupported.
+- Record why each task was scheduled, limited, skipped, unsupported, or not
+  present.
 - Never let a single source block the whole snapshot.
 
 ## Planning Phases
@@ -90,6 +91,35 @@ work:
 - Source-level permission failures can skip dependent tasks.
 
 Feedback decisions must be recorded in `plan.json` or final task outcomes.
+
+## Plan Decision Vocabulary
+
+The planner uses one decision vocabulary in `plan.json`:
+
+```text
+scheduled
+limited
+skipped_by_policy
+unsupported
+not_present
+```
+
+The terms mean:
+
+- `scheduled`: the task should run with the normal limits assigned to its
+  coverage unit and priority.
+- `limited`: the task should run, but with stricter limits, selected objects,
+  metadata-only capture, reduced recursion, or a smaller event window.
+- `skipped_by_policy`: the task should not run because the planner rejected it
+  for cost, pressure, risk, release policy, source overlap, or dependency
+  failure.
+- `unsupported`: the source is valid, but the current implementation has no
+  native collector for it.
+- `not_present`: probing showed that the source or object is absent on this host.
+
+The final manifest status is recorded separately after execution. A `limited`
+plan decision can still produce a `captured` manifest status if the object was
+captured within its reduced limits.
 
 ## Priority Tiers
 
@@ -373,6 +403,13 @@ Skipping must be explicit. Valid skip reasons include:
 
 Skipped objects should appear in `plan.json`; important skipped objects should
 also appear in the manifest.
+
+Skip terminology:
+
+- Use `not_present` when a source or object is absent on this host.
+- Use `unsupported` when the source is valid but no native collector exists.
+- Use `skipped_by_policy` when the planner could collect the object in principle
+  but chooses not to under current policy, cost, risk, or pressure.
 
 ## Determinism
 

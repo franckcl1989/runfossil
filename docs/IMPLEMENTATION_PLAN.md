@@ -15,9 +15,15 @@ The project should evolve by preserving stable contracts first:
 Implementation can then expand source coverage without invalidating earlier
 snapshots.
 
+The project is designed for AI-driven development. AI coding agents are expected
+to contribute implementation work guided by `AGENTS.md` and the design baseline
+documents. This implementation plan provides the delivery order; AI skill specs
+and prompt templates provide the workflow. The `.codex/` and `.agents/`
+directories are reserved for tool-specific implementation configuration.
+
 ## Milestone 0: Design Baseline
 
-Status: current.
+Status: complete.
 
 Deliverables:
 
@@ -27,31 +33,66 @@ Deliverables:
 - Capture planning strategy.
 - Source Taxonomy.
 - Coverage Decision Matrix.
-- Requirements Traceability Matrix.
+- Requirements Traceability.
 - Glossary.
 - Risk Register.
 - Design Review Checklist.
 - Safety and Operations policy.
+- Architectural Decision Record.
 - Implementation plan.
+- AI agent instructions.
+- AI context index, development guide, skill specs, and prompt library.
+- Documentation Readiness Gate.
+- Documentation Readiness Review.
 
 Exit criteria:
 
 - The repository documents product goals and non-goals.
 - The snapshot format and planner behavior are clear enough to implement.
 - The implementation constraints are explicit.
+- Coverage decisions, plan decisions, and manifest statuses have an explicit
+  vocabulary mapping.
+- AI-assisted development has canonical repository instructions and context
+  routing.
+- The Documentation Readiness Gate and Design Review Checklist pass with no
+  blocker.
+- The Documentation Readiness Review records the passing result.
+
+## Documentation-First Gate
+
+Milestone 1 must not begin until Milestone 0 passes the documentation-first
+gate. Passing means:
+
+- all non-code project documents are current and linked from README;
+- scope, safety, snapshot, coverage, planner, requirements, risk, ADR, glossary,
+  implementation order, and AI workflow documents are mutually consistent;
+- every explicit requirement has traceability and acceptance criteria;
+- every known material risk has a mitigation or accepted status;
+- no document claims implementation behavior that does not exist yet;
+- documentation-only validation passes.
+
+If implementation work reveals a design gap later, the project returns to this
+gate for the affected documents before accepting the new behavior.
 
 ## Milestone 1: Workspace Skeleton
 
+Status: in progress.
+
 Deliverables:
 
-- Rust 1.95 workspace.
-- CLI crate.
-- Core model crate.
-- Store crate.
-- Planner crate.
-- Initial filesystem collector crate.
-- Project-wide `#![forbid(unsafe_code)]`.
-- Formatting, lint, and test commands.
+- Rust 1.95 workspace with all planned crates.
+- `runfossil-cli` (binary entry point).
+- `runfossil-core` (shared domain model and invariants).
+- `runfossil-store` (snapshot directory creation and persistence).
+- `runfossil-plan` (planner model skeleton).
+- `runfossil-fs` (bounded filesystem helpers).
+- `runfossil-proc` (procfs collector skeleton).
+- `runfossil-net` (network and netlink collector skeleton).
+- `runfossil-service` (service manager collector skeleton).
+- `runfossil-container` (container runtime collector skeleton).
+- `runfossil-pack` (post-capture packaging skeleton).
+- Project-wide `#![forbid(unsafe_code)]` on every crate.
+- Formatting, lint, build, and test commands.
 
 Exit criteria:
 
@@ -194,15 +235,22 @@ Exit criteria:
 - No collector executes external commands.
 - Snapshot format remains backward-compatible.
 
-## Open Design Questions
+## Resolved Design Defaults
 
-These should be answered during implementation:
+These defaults keep implementation work bounded without reopening product scope:
 
-- Exact archive compression format for `pack`.
-- Whether hashes are required for all captured payloads or only small payloads.
-- How much journald support can be implemented natively without excessive
-  dependency risk.
-- Which netlink families are part of the initial release versus later releases.
-- Which container runtime protocols should be implemented first.
-- Whether hardware management beyond `/sys` should wait until after core
-  collectors are stable.
+- The snapshot directory is the canonical artifact. `pack` should default to a
+  post-capture `.tar.zst` archive created through project code or reviewed Rust
+  libraries, not through shelling out to `tar` or `zstd`.
+- Hashes should be computed for manifest/control files and for captured
+  file-like payloads when doing so does not delay incident-time capture. Skipped
+  hashes must be explicit in manifest object metadata.
+- Native journald or system log support is deferred until dependency and parser
+  risk are reviewed. Kernel ring buffer capture remains the primary early log
+  source.
+- Initial netlink scope is link, address, route, and neighbor state. Socket
+  diagnostic, conntrack, traffic control, and XFRM state remain conditional.
+- Container delivery starts with host-side procfs, namespace, and cgroup evidence,
+  then adds native runtime protocols incrementally.
+- Hardware management beyond Linux-exposed `/sys` state is deferred until core
+  filesystem, procfs, netlink, and snapshot-store behavior is stable.

@@ -1,4 +1,4 @@
-# Requirements Traceability Matrix
+# Requirements Traceability
 
 ## Purpose
 
@@ -46,7 +46,7 @@ excluded
 | R-012 | Packaging and compression are post-capture steps. | specified | Project Design, Snapshot Specification, Safety and Operations | Compression is never required to preserve incident-time evidence. |
 | R-013 | Normal capture has no user-facing configuration. | specified | Project Design, Capture Planning Strategy, ADR | Planner derives capture decisions from host state instead of user-tuned source lists. |
 | R-014 | The planner dynamically adapts to host state. | specified | Capture Planning Strategy | Planner records probe, score, budget, and execution decisions. |
-| R-015 | The planner must record why work was scheduled, limited, skipped, or unsupported. | specified | Snapshot Specification, Capture Planning Strategy | `plan.json` explains task decisions and skip reasons. |
+| R-015 | The planner must record why work was scheduled, limited, skipped, unsupported, or not present. | specified | Snapshot Specification, Capture Planning Strategy | `plan.json` explains task decisions and skip reasons. |
 | R-016 | Collection must not invoke external commands. | specified | Project Design, Architecture, Safety and Operations, ADR | Collectors do not invoke tools such as `ip`, `ss`, `systemctl`, `journalctl`, `docker`, `smartctl`, or `ipmitool`. |
 | R-017 | Collection must be Rust-native. | specified | Project Design, Architecture, Coverage Decision Matrix | Native Linux interfaces, netlink, sockets, filesystems, and protocols are used instead of command wrappers. |
 | R-018 | Sources requiring native protocol support are not replaced by shell commands. | specified | Coverage Decision Matrix, Safety and Operations, ADR | Such sources are marked `deferred-native` until native support exists. |
@@ -80,6 +80,11 @@ excluded
 | R-046 | The design must explain implementation phases. | specified | Implementation Plan | Milestones define delivery order without duplicating taxonomy decisions. |
 | R-047 | The design must preserve architectural decisions. | specified | ADR | Project-level decisions are recorded and reviewed before change. |
 | R-048 | The design must include full coverage decisions. | specified | Coverage Decision Matrix | Every taxonomy source family has explicit collection decisions and rationales. |
+| R-049 | Snapshot control files must have explicit schema and compatibility rules. | specified | Snapshot Specification | Manifest, plan, and error records define required fields, path rules, and schema evolution behavior. |
+| R-050 | Coverage decisions, plan decisions, and manifest statuses must remain distinct and mapped. | specified | Snapshot Specification, Capture Planning Strategy, Coverage Decision Matrix, Glossary | Static intent, planner scheduling, and final object outcomes use separate vocabularies with an explicit mapping. |
+| R-051 | AI-assisted development must follow canonical project instructions. | specified | AGENTS, AI Context Index, AI Development Guide, AI Skill Specs, AI Prompt Library | AI tools have a single project entry point, task-specific context routing, reusable skill specs, and validation expectations. |
+| R-052 | Code implementation must wait for documentation readiness. | specified | Documentation Readiness Gate, Design Review Checklist, ADR, Implementation Plan, AGENTS | Milestone 1 does not begin until non-code documents pass readiness and review gates with no blockers. |
+| R-053 | AI-assisted work must stay inside this repository unless explicitly requested otherwise. | specified | AGENTS, Documentation Readiness Gate, AI Development Guide, ADR, CLAUDE, Copilot Instructions | AI tools do not edit or propose changes outside the repository without an explicit user request. |
 
 ## Acceptance Gates Before Implementation
 
@@ -93,6 +98,11 @@ Before code implementation begins, the design is considered ready only if:
 - Unsafe-code policy is unambiguous.
 - Snapshot completion and partial-capture semantics are defined.
 - Planner decisions are inspectable after capture.
+- Schema compatibility and unknown-field behavior are defined.
+- Coverage decision, plan decision, and manifest status vocabularies are mapped.
+- AI-assisted development instructions and context routing are present.
+- Documentation Readiness Gate and Design Review Checklist pass with no blocker.
+- Repository-local work boundaries are documented for AI-assisted work.
 
 ## Change Control
 

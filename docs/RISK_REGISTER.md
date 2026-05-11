@@ -54,6 +54,17 @@ accepted    The risk is inherent and handled by documentation or operator policy
 | RK-023 | Output filesystem fills during capture. | high | controlled | Validate output path, check available space, stop low-priority work first, and preserve partial evidence. | Safety and Operations |
 | RK-024 | Hashing large payloads delays incident-time capture. | medium | controlled | Hashes are recommended but may be skipped for large objects by policy. | Snapshot Specification |
 | RK-025 | Ambiguous terminology causes implementation drift. | medium | controlled | Glossary defines core terms. | Glossary |
+| RK-026 | Ambiguous snapshot schema breaks offline tooling or future compatibility. | high | controlled | Snapshot Specification defines required fields, path rules, schema evolution, and unknown-field behavior. | Snapshot Specification |
+| RK-027 | Coverage decisions, planner decisions, and manifest statuses drift apart. | medium | controlled | Static intent, plan decisions, and final outcomes have separate vocabularies and an explicit mapping. | Snapshot Specification, Capture Planning Strategy, Coverage Decision Matrix |
+| RK-028 | AI-assisted changes invent behavior, skip context, or drift from canonical design. | medium | controlled | AGENTS, AI Context Index, AI Development Guide, AI Skill Specs, and AI Prompt Library define required context, workflows, and validation. | AGENTS, AI Context Index, AI Development Guide |
+| RK-029 | Implementation starts before documentation contracts are ready. | high | controlled | Documentation Readiness Gate and Design Review Checklist block Milestone 1 until non-code documents are complete and consistent. | Documentation Readiness Gate, Design Review Checklist, Implementation Plan, ADR |
+| RK-030 | AI-assisted work changes files outside the repository scope. | medium | controlled | AGENTS, Documentation Readiness Gate, AI Development Guide, Claude instructions, and Copilot instructions require repository-local work unless explicitly requested otherwise. | AGENTS, Documentation Readiness Gate, AI Development Guide |
+| RK-031 | AI-generated code introduces unsafe Rust blocks despite project policy. | high | controlled | Workspace-wide `unsafe_code = "forbid"` lint rejects unsafe code at compile time. `clippy.toml` disallows `Command` types. CI enforcement prevents merges. | Cargo.toml workspace lints, clippy.toml, Safety and Operations |
+| RK-032 | AI hallucinates collector implementations that invoke external commands. | high | controlled | `clippy.toml` disallows `std::process::Command` and `Command::new`. Collectors must use native Rust interfaces. AI skill specs and prompt library prohibit external-command workarounds. | clippy.toml, Safety and Operations, AI Skill Specs |
+| RK-033 | AI changes vocabulary or terminology without updating dependent documents. | medium | controlled | AGENTS.md change rules require dependent-document updates. AI Context Index routes vocabulary tasks to Glossary. AI Skill Specs require cross-document validation. | AGENTS.md, AI Context Index, AI Skill Specs |
+| RK-034 | AI fails to run validation commands after making changes. | medium | controlled | AGENTS.md Validation section lists mandatory commands. AI Development Guide requires validation reporting. AI Prompt Library prompts include validation steps. | AGENTS.md, AI Development Guide, AI Prompt Library |
+| RK-035 | AI introduces code that contradicts design baseline behavior. | high | controlled | AGENTS.md requires reading specific design documents before changes. Non-Negotiable Constraints section defines inviolable rules. AI Development Guide requires canonical-document alignment. | AGENTS.md, AI Development Guide, AI Context Index |
+| RK-036 | Multiple AI tools produce conflicting interpretations of the same design document. | medium | controlled | AGENTS.md is the single canonical AI instruction entry point. Tool-specific files are required to defer to AGENTS.md. Glossary defines terms for all tools. AI Skill Specs define shared workflows. | AGENTS.md, CLAUDE.md, Copilot Instructions, Glossary, AI Skill Specs |
 
 ## Risk Review Rules
 
@@ -67,6 +78,10 @@ Risk entries should be updated when:
   added.
 - Snapshot format semantics change.
 - Planner budget or priority rules change.
+- Schema compatibility rules or decision/status vocabularies change.
+- AI workflow, skill specs, or prompt guidance change.
+- Documentation readiness or implementation-entry policy changes.
+- Repository-local work policy changes.
 
 ## Pre-Implementation Risk Gate
 
@@ -80,6 +95,14 @@ Before implementation starts, these risks must be controlled by design:
 - RK-011
 - RK-016
 - RK-017
+- RK-026
+- RK-027
+- RK-028
+- RK-029
+- RK-030
+- RK-031
+- RK-032
+- RK-035
 
 The current design controls these risks through documented policy and artifact
 contracts. Implementation must preserve those controls.

@@ -1,0 +1,20 @@
+[package]
+name = "runfossil-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "runfossil"
+path = "src/main.rs"
+
+[dependencies]
+runfossil-core = { path = "../runfossil-core" }
+runfossil-pack = { path = "../runfossil-pack" }
+runfossil-plan = { path = "../runfossil-plan" }
+runfossil-store = { path = "../runfossil-store" }
+
+[lints]
+workspace = true

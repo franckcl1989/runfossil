@@ -207,10 +207,12 @@ Testing should cover:
 - Manifest status vocabulary.
 - Atomic write behavior.
 - Path mapping and reserved names.
+- Snapshot schema required fields and unknown-field compatibility.
 - Process disappearance races.
 - Permission-denied outcomes.
 - Budget enforcement.
 - Planner determinism from fixture probes.
+- Coverage decision, plan decision, and manifest status mapping.
 - No external command execution in collectors.
 - No project-owned unsafe code.
 
@@ -233,6 +235,31 @@ Dependencies should be chosen conservatively:
 
 Because project-owned code forbids unsafe code, any dependency with internal
 unsafe code must have a clear reason to exist.
+
+## AI-Generated Code Safety
+
+The project is designed for AI-driven development. AI-generated code must
+satisfy every safety constraint that applies to human-written code:
+
+- `#![forbid(unsafe_code)]` enforced at workspace level.
+- `std::process::Command` and `Command::new` rejected by `clippy.toml`.
+- Collectors must use native Linux interfaces, not external commands.
+- Capture must be bounded, non-destructive, and root-only.
+- Snapshot output must follow the schema and path rules in the Snapshot
+  Specification.
+
+AI tools following `AGENTS.md`, `AI_DEVELOPMENT_GUIDE.md`, and the relevant
+task-specific documents should produce safe code by construction. When AI
+assistance introduces a change, the same validation commands apply:
+`cargo fmt --check`, `cargo clippy --workspace -- -D warnings`, and
+`cargo test`.
+
+Code-level AI-specific risks (RK-031 through RK-036) are controlled through workspace
+lint enforcement, clippy disallowed-methods configuration, skill spec
+constraints, and prompt library guardrails. Process-level AI risks
+(RK-028 through RK-030) are controlled through AGENTS.md policy,
+documentation readiness gates, and repository-local work boundaries.
+No lower standard applies to AI-generated code.
 
 ## Operational Guidance
 

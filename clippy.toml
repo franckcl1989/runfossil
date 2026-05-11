@@ -1,0 +1,6 @@
+disallowed-methods = [
+    { path = "std::process::Command::new", reason = "collectors must not invoke external commands" },
+]
+disallowed-types = [
+    { path = "std::process::Command", reason = "collectors must not invoke external commands" },
+]

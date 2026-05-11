@@ -16,14 +16,24 @@ Each row is a coverage unit. A coverage unit may be a single file, a directory
 tree, a symlink family, a native protocol response, or an event-window domain.
 
 When a row names a source path or domain from the taxonomy, that row accounts for
-all raw snapshot objects listed under that path or domain in the original
-taxonomy. For example, the `/proc/stat` row covers CPU counters, context switch
-counters, boot time, fork counters, running process counters, and blocked
-process counters.
+all raw snapshot objects that belong to that path, object family, or domain. For
+example, the `/proc/stat` row covers CPU counters, context switch counters, boot
+time, fork counters, running process counters, and blocked process counters.
 
 This keeps the matrix complete without duplicating every field-level description
 from the taxonomy. `runfossil` preserves raw evidence; it does not need separate
 collection decisions for each field inside a raw file.
+
+Completeness is evaluated by assignment:
+
+- Every L1 source family in the Source Taxonomy must have a section here.
+- Every L2 domain in the Source Taxonomy must map to at least one row here.
+- Every raw object family must have exactly one primary coverage unit, unless it
+  is explicitly excluded.
+- Overlapping rows are allowed only when one row is a fallback or supplement and
+  the rationale says so.
+- A new source, domain, or object family is incomplete until it has a decision,
+  priority, mode, and rationale.
 
 ## Decision Vocabulary
 
@@ -75,6 +85,21 @@ native-socket
 metadata-only
 skip
 ```
+
+## Vocabulary Relationship
+
+This matrix defines static coverage decisions. It does not define final runtime
+outcomes. Runtime artifacts use two additional vocabularies:
+
+- `plan.json` records a per-host plan decision such as `scheduled`, `limited`,
+  `skipped_by_policy`, `unsupported`, or `not_present`.
+- `manifest.json` records final object status such as `captured`, `vanished`,
+  `not_found`, `permission_denied`, `timeout`, `size_limited`, `truncated`,
+  `skipped_by_policy`, `unsupported`, or `io_error`.
+
+The authoritative mapping between coverage decisions, plan decisions, and
+manifest statuses is maintained in the
+[Snapshot Specification](SNAPSHOT_SPECIFICATION.md).
 
 ## /proc
 
@@ -321,20 +346,20 @@ skip
 
 The following are outside the core capture target even when present on a host:
 
-| Exclusion | Decision | Reason |
-|---|---:|---|
-| Static system configuration files as a primary target | exclude | Outside runtime raw snapshot scope. |
-| Application configuration and business data | exclude | Application/business scope, not Linux runtime evidence. |
-| Source code files and package manager databases | exclude | Static host content, not incident runtime state. |
-| Container image contents | exclude | Image artifact scope, not local runtime state. |
-| Database internal runtime state | exclude | Database-specific tooling scope. |
-| Language runtime internals such as JVM, Go, Python, Node.js, .NET, BEAM | exclude | Language-specific tooling scope. |
-| Application debug endpoints and application metrics systems | exclude | Application observability scope. |
-| Kubernetes API and orchestration control-plane state | exclude | Orchestration control-plane scope. |
-| Cloud provider control-plane APIs | exclude | Cloud control-plane scope. |
-| Full long-term historical logs | exclude | Unbounded and outside incident snapshot scope; bounded windows only. |
-| External command output | exclude | Violates native Rust collection policy. |
-| Large core, vmcore, or kernel memory payloads by default | exclude | Too large and risky for incident-time capture; metadata only. |
+| Exclusion | Decision | Priority | Mode | Rationale |
+|---|---:|---:|---|---|
+| Static system configuration files as a primary target | exclude | NA | skip | Outside runtime raw snapshot scope. |
+| Application configuration and business data | exclude | NA | skip | Application/business scope, not Linux runtime evidence. |
+| Source code files and package manager databases | exclude | NA | skip | Static host content, not incident runtime state. |
+| Container image contents | exclude | NA | skip | Image artifact scope, not local runtime state. |
+| Database internal runtime state | exclude | NA | skip | Database-specific tooling scope. |
+| Language runtime internals such as JVM, Go, Python, Node.js, .NET, BEAM | exclude | NA | skip | Language-specific tooling scope. |
+| Application debug endpoints and application metrics systems | exclude | NA | skip | Application observability scope. |
+| Kubernetes API and orchestration control-plane state | exclude | NA | skip | Orchestration control-plane scope. |
+| Cloud provider control-plane APIs | exclude | NA | skip | Cloud control-plane scope. |
+| Full long-term historical logs | exclude | NA | skip | Unbounded and outside incident snapshot scope; bounded windows only. |
+| External command output | exclude | NA | skip | Violates native Rust collection policy. |
+| Large core, vmcore, or kernel memory payloads by default | exclude | NA | skip | Too large and risky for incident-time capture; metadata only. |
 
 ## Review Rules
 
@@ -346,3 +371,13 @@ Changes to this matrix must also consider:
 - The [Snapshot Specification](SNAPSHOT_SPECIFICATION.md), if new object statuses
   or storage modes are required.
 - The [Implementation Plan](IMPLEMENTATION_PLAN.md), if delivery order changes.
+- The [Requirements Traceability](REQUIREMENTS_TRACEABILITY.md), if a
+  source moves into or out of accepted scope.
+
+Before a design baseline is considered complete, every row must answer:
+
+- What source or object family is covered?
+- Is the object collected, conditional, limited, deferred-native, or excluded?
+- What priority applies if it can run?
+- What storage or collection mode applies?
+- Why does the decision preserve forensic value without violating safety policy?

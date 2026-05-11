@@ -7,9 +7,10 @@ separate internal crates for planning, collection, storage, packaging, and share
 types. The architecture favors narrow module responsibilities so new source
 families can be added without changing the capture engine.
 
-This document describes component boundaries and data flow. It intentionally
-avoids concrete Rust trait or function signatures until the design phase is
-complete.
+This document describes component boundaries and data flow. It avoids concrete
+Rust trait or function signatures when those details are better expressed in
+the source code itself, but the type-level vocabulary in `runfossil-core` is
+expected to mirror the categories described here.
 
 ## Workspace Shape
 
@@ -75,6 +76,7 @@ Responsibilities:
 - Build the capture task graph.
 - Assign priority, cost, risk, and budgets.
 - Record planner decisions for `plan.json`.
+- Use the shared plan decision vocabulary.
 - Adapt when sources are unavailable or expensive.
 
 The planner decides what should be attempted. It does not write snapshot files
@@ -90,6 +92,7 @@ Responsibilities:
 - Record manifest entries.
 - Append error events.
 - Use atomic write patterns.
+- Enforce snapshot schema, relative artifact paths, and reserved-name rules.
 - Mark capture completion.
 
 The store owns the on-disk format. Collectors produce bytes and metadata; the
@@ -265,3 +268,26 @@ New source families should be added by:
 5. Updating documentation for source coverage and limitations.
 
 New collectors must not introduce external command dependencies.
+
+## Source Family to Crate Mapping
+
+Each source family maps to a planned collector crate. This mapping guides
+implementation without locking the workspace shape:
+
+| Source family (L1) | Primary crate | Collection methods |
+|---|---|---|
+| `/proc` | `runfossil-proc` | raw-file, dir-listing, symlink-targets |
+| `/sys` | `runfossil-fs` | bounded-tree, raw-file |
+| `/run` | `runfossil-fs` | bounded-tree, metadata |
+| `/dev` | `runfossil-fs` | metadata, symlink-targets |
+| Kernel ring buffer | `runfossil-store` | bounded-window |
+| System event log | `runfossil-service` | native-protocol |
+| Service manager | `runfossil-service` | native-protocol |
+| Netlink | `runfossil-net` | native-netlink |
+| Security / audit | `runfossil-fs`, `runfossil-service` | bounded-tree, native-protocol |
+| User / session | `runfossil-service` | native-protocol |
+| Scheduler / job | `runfossil-service` | native-protocol, bounded-tree |
+| Time sync | `runfossil-service` | native-protocol, metadata |
+| Crash dump store | `runfossil-fs` | metadata-only, bounded-tree |
+| Hardware management | `runfossil-fs` | bounded-tree |
+| Container runtime | `runfossil-container` | native-socket, bounded-tree |

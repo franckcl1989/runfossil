@@ -12,6 +12,11 @@ to replace observability, metrics, tracing, log aggregation, crash reporting, or
 application-specific debug tooling. It fills the gap between "the host is broken
 right now" and "we still need the runtime scene after recovery."
 
+The project is designed for AI-driven development. Design documents, AI workflow
+instructions, skill specifications, and prompt templates are maintained as
+first-class project artifacts. AI coding agents must follow `AGENTS.md` as the
+canonical entry point.
+
 ## Product Positioning
 
 `runfossil` is:
@@ -221,3 +226,8 @@ The initial design baseline supports these outcomes:
 - The manifest explains every success, failure, skip, and limit.
 - The capture plan adapts to host size and pressure without user configuration.
 - The codebase can grow collector families independently inside a workspace.
+- Snapshot control files have explicit schema and compatibility rules.
+- Coverage intent, planner decisions, and final object outcomes remain separate
+  and mapped.
+- Non-code project documentation passed the documentation readiness and design
+  review gates before implementation began.
