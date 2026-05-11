@@ -80,7 +80,7 @@ fn scan_cgroup_controller(
     Ok(())
 }
 
-fn is_container_related(name: &str) -> bool {
+pub(crate) fn is_container_related(name: &str) -> bool {
     CONTAINER_MARKERS
         .iter()
         .any(|m| name.starts_with(m) || name.contains(m))

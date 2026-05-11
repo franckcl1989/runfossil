@@ -269,4 +269,138 @@ mod tests {
         assert!(json.contains("\"path\": null"));
         assert!(json.contains("\"reason\": \"file does not exist\""));
     }
+
+    #[test]
+    fn all_manifest_statuses_serialize_as_expected_strings() {
+        let statuses = [
+            (ManifestStatus::Captured, "captured"),
+            (ManifestStatus::Vanished, "vanished"),
+            (ManifestStatus::NotFound, "not_found"),
+            (ManifestStatus::PermissionDenied, "permission_denied"),
+            (ManifestStatus::Timeout, "timeout"),
+            (ManifestStatus::SizeLimited, "size_limited"),
+            (ManifestStatus::Truncated, "truncated"),
+            (ManifestStatus::SkippedByPolicy, "skipped_by_policy"),
+            (ManifestStatus::Unsupported, "unsupported"),
+            (ManifestStatus::IoError, "io_error"),
+        ];
+
+        for (status, expected_str) in &statuses {
+            let entry = ManifestEntry::new(
+                format!("test.{expected_str}"),
+                SourceSlug::Proc,
+                "system",
+                "test",
+                ObjectKind::File,
+                *status,
+            );
+            let json = entry.to_json();
+            let expected = format!("\"status\": \"{expected_str}\"");
+            assert!(
+                json.contains(&expected),
+                "status {expected_str} not found in JSON: {json}"
+            );
+        }
+    }
+
+    #[test]
+    fn all_object_kinds_serialize_as_expected_strings() {
+        let kinds = [
+            (ObjectKind::File, "file"),
+            (ObjectKind::FileSet, "file_set"),
+            (ObjectKind::DirListing, "dir_listing"),
+            (ObjectKind::Symlink, "symlink"),
+            (ObjectKind::Metadata, "metadata"),
+            (ObjectKind::MetadataOnly, "metadata_only"),
+            (ObjectKind::BoundedTree, "bounded_tree"),
+            (ObjectKind::EventWindow, "event_window"),
+            (ObjectKind::NativeDump, "native_dump"),
+        ];
+
+        for (kind, expected_str) in &kinds {
+            let entry = ManifestEntry::new(
+                format!("test.{expected_str}"),
+                SourceSlug::Proc,
+                "system",
+                "test",
+                *kind,
+                ManifestStatus::Captured,
+            );
+            let json = entry.to_json();
+            let expected = format!("\"kind\": \"{expected_str}\"");
+            assert!(
+                json.contains(&expected),
+                "kind {expected_str} not found in JSON: {json}"
+            );
+        }
+    }
+
+    #[test]
+    fn hash_record_json_format() {
+        let hash = HashRecord::new("sha256", "abcdef1234567890");
+        let json = hash.to_json();
+        assert!(json.contains("\"algorithm\":\"sha256\""));
+        assert!(json.contains("\"value\":\"abcdef1234567890\""));
+        assert!(json.starts_with('{'));
+        assert!(json.ends_with('}'));
+    }
+
+    #[test]
+    fn manifest_entry_with_all_optional_fields_set() {
+        let entry = ManifestEntry::new(
+            "full.entry",
+            SourceSlug::Proc,
+            "domain",
+            "object",
+            ObjectKind::File,
+            ManifestStatus::Captured,
+        )
+        .with_path("raw/path")
+        .with_bytes(1024)
+        .with_hash(HashRecord::new("sha256", "deadbeef"))
+        .with_timing("1000000000", "2000000000", 1000)
+        .with_reason("all fields set")
+        .with_limits(ObjectLimits::new(4096, 100, 64, 2));
+
+        let json = entry.to_json();
+        assert!(json.contains("\"path\": \"raw/path\""));
+        assert!(json.contains("\"bytes\": 1024"));
+        assert!(json.contains("\"algorithm\":\"sha256\""));
+        assert!(json.contains("\"started_at_unix_ns\": \"1000000000\""));
+        assert!(json.contains("\"finished_at_unix_ns\": \"2000000000\""));
+        assert!(json.contains("\"elapsed_us\": 1000"));
+        assert!(json.contains("\"max_bytes\":4096"));
+        assert!(json.contains("\"max_files\":64"));
+        assert!(json.contains("\"max_depth\":2"));
+        assert!(json.contains("\"reason\": \"all fields set\""));
+    }
+
+    #[test]
+    fn manifest_entry_with_vanished_status_serializes() {
+        let entry = ManifestEntry::new(
+            "proc.process.12345.status",
+            SourceSlug::Proc,
+            "process",
+            "12345/status",
+            ObjectKind::File,
+            ManifestStatus::Vanished,
+        )
+        .with_reason("process exited during capture");
+
+        let json = entry.to_json();
+        assert!(json.contains("\"status\": \"vanished\""));
+        assert!(json.contains("\"reason\": \"process exited during capture\""));
+    }
+
+    #[test]
+    fn object_limits_default_for_skeleton() {
+        let limits = ObjectLimits::default_for_skeleton();
+        assert_eq!(limits.max_bytes, 1_048_576);
+        assert_eq!(limits.timeout_ms, 50);
+        assert_eq!(limits.max_files, 1);
+        assert_eq!(limits.max_depth, 0);
+        let json = limits.to_json();
+        assert!(json.contains("\"max_bytes\":1048576"));
+        assert!(json.contains("\"max_files\":1"));
+    }
 }

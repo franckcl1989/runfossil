@@ -392,4 +392,37 @@ mod tests {
         assert_eq!(result.entries.len(), 2);
         assert!(result.was_truncated);
     }
+
+    #[test]
+    fn list_dir_entries_with_large_count_does_not_truncate_prematurely() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let count = 500;
+        for i in 0..count {
+            fs::write(tmp.path().join(format!("file_{i:04}")), b"").expect("write");
+        }
+
+        let limits = BoundedTraversalLimits::new(count, 1, 5_000);
+        let result = list_dir_entries(tmp.path(), limits).expect("list_dir_entries");
+        assert_eq!(result.entries.len() as u64, count);
+        assert!(!result.was_truncated);
+    }
+
+    #[test]
+    fn bounded_traversal_process_listing_is_configured_for_large_hosts() {
+        let limits = BoundedTraversalLimits::process_listing();
+        assert!(limits.max_files >= 32_767);
+        assert_eq!(limits.max_depth, 1);
+    }
+
+    #[test]
+    fn read_file_bounded_works_with_max_bytes_larger_than_content() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let content = &[0u8; 500];
+        fs::write(tmp.path().join("data.bin"), content).expect("write");
+
+        let limits = BoundedReadLimits::new(600, 100);
+        let result = read_file_bounded(&tmp.path().join("data.bin"), limits).expect("read");
+        assert_eq!(result.content.len(), 500);
+        assert!(!result.was_truncated);
+    }
 }

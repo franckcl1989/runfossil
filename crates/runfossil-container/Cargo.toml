@@ -11,5 +11,8 @@ runfossil-core = { path = "../runfossil-core" }
 runfossil-fs = { path = "../runfossil-fs" }
 runfossil-store = { path = "../runfossil-store" }
 
+[dev-dependencies]
+tempfile = "3"
+
 [lints]
 workspace = true

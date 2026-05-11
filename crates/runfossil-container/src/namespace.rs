@@ -3,12 +3,17 @@
 use std::path::Path;
 
 use runfossil_core::{ManifestStatus, ObjectKind, SourceSlug};
-use runfossil_fs::{BoundedReadLimits, read_link_bounded};
+use runfossil_fs::{
+    BoundedReadLimits, BoundedTraversalLimits, list_dir_entries, read_file_bounded,
+    read_link_bounded,
+};
 use runfossil_store::{ErrorLogEntry, ManifestEntry, ObjectLimits, SnapshotStore, StoreError};
 
 const MAX_NS_BYTES: u64 = 4_096;
 const TIMEOUT_MS: u64 = 3_000;
 const MAX_CONTAINER_PIDS: u64 = 512;
+const PID_DISCOVERY_MAX_FILES: u64 = 128;
+const PID_DISCOVERY_MAX_BYTES: u64 = 131_072;
 
 const NAMESPACES: &[(&str, &str)] = &[
     ("cgroup", "cgroup"),
@@ -137,23 +142,29 @@ pub(crate) fn discover_container_pids() -> Vec<u32> {
 }
 
 fn discover_pids_from_cgroup(base: &Path, marker: &str, pids: &mut Vec<u32>) {
-    let entries = match std::fs::read_dir(base) {
-        Ok(entries) => entries,
+    let limits = BoundedTraversalLimits::new(PID_DISCOVERY_MAX_FILES, 1, TIMEOUT_MS);
+    let read_limits = BoundedReadLimits::new(PID_DISCOVERY_MAX_BYTES, TIMEOUT_MS);
+
+    let listing = match list_dir_entries(base, limits) {
+        Ok(listing) => listing,
         Err(_) => return,
     };
 
-    for entry in entries.flatten() {
-        let name = entry.file_name().to_string_lossy().into_owned();
+    for entry in &listing.entries {
+        let name = &entry.name;
         if !name.starts_with(marker) {
             continue;
         }
-        let procs_file = entry.path().join("cgroup.procs");
-        if let Ok(content) = std::fs::read_to_string(&procs_file) {
-            for line in content.lines() {
-                if let Ok(pid) = line.trim().parse::<u32>() {
-                    pids.push(pid);
-                    if pids.len() as u64 >= MAX_CONTAINER_PIDS {
-                        return;
+        if entry.is_dir {
+            let procs_path = base.join(name).join("cgroup.procs");
+            if let Ok(result) = read_file_bounded(&procs_path, read_limits) {
+                let content = String::from_utf8_lossy(&result.content);
+                for line in content.lines() {
+                    if let Ok(pid) = line.trim().parse::<u32>() {
+                        pids.push(pid);
+                        if pids.len() as u64 >= MAX_CONTAINER_PIDS {
+                            return;
+                        }
                     }
                 }
             }

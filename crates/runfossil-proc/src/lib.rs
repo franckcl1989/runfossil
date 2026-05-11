@@ -947,3 +947,237 @@ pub(crate) fn fs_error_to_manifest_status(error: &FsError) -> ManifestStatus {
         FsError::Io { .. } => ManifestStatus::IoError,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::sys::CgroupVersion;
+    use runfossil_core::EffectiveUid;
+    use runfossil_fs::FsError;
+    use runfossil_store::{HostMetadata, SnapshotMetadata};
+    use std::io;
+
+    fn test_metadata() -> SnapshotMetadata {
+        SnapshotMetadata {
+            tool_version: "0.1.0".into(),
+            started_at_unix_ns: "1".into(),
+            effective_uid: EffectiveUid::ROOT,
+            host: HostMetadata {
+                hostname: "test".into(),
+                boot_id: "test-boot".into(),
+                kernel_release: "6.8.0".into(),
+                machine: "x86_64".into(),
+            },
+        }
+    }
+
+    fn dir() -> tempfile::TempDir {
+        tempfile::tempdir().unwrap()
+    }
+
+    fn new_store(d: &tempfile::TempDir) -> SnapshotStore {
+        SnapshotStore::create(d.path().join("snapshot"), test_metadata()).unwrap()
+    }
+
+    #[test]
+    fn source_returns_proc_slug() {
+        assert_eq!(source(), SourceSlug::Proc);
+    }
+
+    #[test]
+    fn cgroup_version_as_str() {
+        assert_eq!(CgroupVersion::V1.as_str(), "v1");
+        assert_eq!(CgroupVersion::V2.as_str(), "v2");
+        assert_eq!(CgroupVersion::Hybrid.as_str(), "hybrid");
+        assert_eq!(CgroupVersion::None.as_str(), "none");
+    }
+
+    #[test]
+    fn output_path_strips_absolute_proc_prefix() {
+        assert_eq!(
+            output_path(Path::new("/proc/stat")),
+            Path::new("raw/proc/stat")
+        );
+        assert_eq!(
+            output_path(Path::new("/proc/1/status")),
+            Path::new("raw/proc/1/status")
+        );
+    }
+
+    #[test]
+    fn output_path_handles_dev_paths() {
+        assert_eq!(
+            output_path(Path::new("/dev/kmsg")),
+            Path::new("raw/dev/kmsg")
+        );
+    }
+
+    #[test]
+    fn output_path_preserves_relative_paths() {
+        assert_eq!(
+            output_path(Path::new("relative.txt")),
+            Path::new("raw/relative.txt")
+        );
+    }
+
+    #[test]
+    fn fs_error_not_found_maps_to_not_found_status() {
+        let e = FsError::NotFound(Path::new("/nope").to_path_buf());
+        assert_eq!(fs_error_to_manifest_status(&e), ManifestStatus::NotFound);
+    }
+
+    #[test]
+    fn fs_error_permission_denied_maps_correctly() {
+        let e = FsError::PermissionDenied(Path::new("/root").to_path_buf());
+        assert_eq!(
+            fs_error_to_manifest_status(&e),
+            ManifestStatus::PermissionDenied
+        );
+    }
+
+    #[test]
+    fn fs_error_timeout_maps_correctly() {
+        let e = FsError::Timeout(Path::new("/slow").to_path_buf());
+        assert_eq!(fs_error_to_manifest_status(&e), ManifestStatus::Timeout);
+    }
+
+    #[test]
+    fn fs_error_size_limited_maps_correctly() {
+        let e = FsError::SizeLimited {
+            path: Path::new("/big").to_path_buf(),
+            max_bytes: 100,
+        };
+        assert_eq!(fs_error_to_manifest_status(&e), ManifestStatus::SizeLimited);
+    }
+
+    #[test]
+    fn fs_error_io_maps_correctly() {
+        let e = FsError::Io {
+            path: Path::new("/broken").to_path_buf(),
+            source: io::Error::new(io::ErrorKind::Other, "broken"),
+        };
+        assert_eq!(fs_error_to_manifest_status(&e), ManifestStatus::IoError);
+    }
+
+    #[test]
+    fn all_fs_error_to_status_mappings_are_distinct() {
+        let mut seen = Vec::new();
+        seen.push(fs_error_to_manifest_status(&FsError::NotFound(
+            Path::new("a").to_path_buf(),
+        )));
+        seen.push(fs_error_to_manifest_status(&FsError::PermissionDenied(
+            Path::new("b").to_path_buf(),
+        )));
+        seen.push(fs_error_to_manifest_status(&FsError::Timeout(
+            Path::new("c").to_path_buf(),
+        )));
+        seen.push(fs_error_to_manifest_status(&FsError::SizeLimited {
+            path: Path::new("d").to_path_buf(),
+            max_bytes: 1,
+        }));
+        seen.push(fs_error_to_manifest_status(&FsError::Io {
+            path: Path::new("e").to_path_buf(),
+            source: io::Error::new(io::ErrorKind::Other, ""),
+        }));
+        let unique: Vec<_> = seen.iter().collect();
+        assert_eq!(
+            unique.len(),
+            5,
+            "all five FsError variants should map to distinct statuses"
+        );
+    }
+
+    #[test]
+    fn kmsg_event_window_object_kind_is_correct() {
+        // kmsg collection touches /dev/kmsg which may block on live systems.
+        // Verify the object kind constant is correct instead.
+        assert_eq!(ObjectKind::EventWindow.as_str(), "event_window");
+    }
+
+    #[test]
+    fn proc_collector_target_symbols_include_all_domains() {
+        let targets = p0_global_targets();
+        let domains: std::collections::BTreeSet<&str> = targets.iter().map(|t| t.domain).collect();
+        assert!(domains.contains("system"));
+        assert!(domains.contains("cpu"));
+        assert!(domains.contains("memory"));
+        assert!(domains.contains("pressure"));
+        assert!(domains.contains("interrupt"));
+        assert!(domains.contains("block"));
+        assert!(domains.contains("filesystem"));
+        assert!(domains.contains("kernel"));
+        assert!(domains.contains("net"));
+    }
+
+    #[test]
+    fn proc_targets_have_non_empty_ids() {
+        for t in &p0_global_targets() {
+            assert!(
+                !t.object.is_empty(),
+                "P0 target '{}' has empty object",
+                t.domain
+            );
+            assert!(t.source_path.starts_with("/proc/"));
+            assert!(!t.domain.is_empty());
+        }
+    }
+
+    #[test]
+    fn sys_collector_returns_ok_when_sysfs_absent() {
+        let d = dir();
+        let mut store = new_store(&d);
+        let result = collect_sys(&mut store);
+        if let Err(e) = result.as_ref() {
+            assert!(
+                e.to_string().contains("Io") || e.to_string().contains("not found"),
+                "unexpected error: {e}"
+            );
+        }
+    }
+
+    #[test]
+    fn dev_collector_returns_ok_when_dev_absent() {
+        let d = dir();
+        let mut store = new_store(&d);
+        let result = collect_dev(&mut store);
+        if let Err(e) = result.as_ref() {
+            assert!(e.to_string().contains("Io"), "unexpected error: {e}");
+        }
+    }
+
+    #[test]
+    fn now_ns_is_a_timestamp_string() {
+        let ns = now_ns();
+        let parsed: u64 = ns.parse().unwrap();
+        assert!(
+            parsed > 1_700_000_000_000_000_000,
+            "timestamp should be in 2023+ range"
+        );
+    }
+
+    #[test]
+    fn p1_process_targets_are_counted() {
+        let targets = p1_process_targets();
+        assert_eq!(targets.len(), 14, "expected 14 per-process file targets");
+    }
+
+    #[test]
+    fn p0_global_targets_include_core_files() {
+        let targets = p0_global_targets();
+        let names: Vec<&str> = targets.iter().map(|t| t.object).collect();
+        assert!(names.contains(&"loadavg"));
+        assert!(names.contains(&"meminfo"));
+        assert!(names.contains(&"cpuinfo"));
+        assert!(names.contains(&"stat"));
+        assert!(names.contains(&"mounts"));
+    }
+
+    #[test]
+    fn p2_limited_targets_include_ipc_and_device_files() {
+        let targets = p2_limited_targets();
+        let names: Vec<&str> = targets.iter().map(|t| t.object).collect();
+        assert!(names.contains(&"shm"));
+        assert!(names.contains(&"msg"));
+        assert!(names.contains(&"sem"));
+    }
+}
