@@ -7,7 +7,6 @@ use runfossil_core::{ManifestStatus, ObjectKind, SourceSlug};
 use runfossil_store::{ManifestEntry, SnapshotStore, StoreError};
 
 mod cgroup;
-mod docker_api;
 mod namespace;
 mod runtime;
 
@@ -20,8 +19,7 @@ pub const fn source() -> SourceSlug {
 /// Collects container runtime state into the given snapshot store.
 ///
 /// The collector runs independently: it records detection metadata first,
-/// then collects /run container state, host-side cgroup and namespace evidence,
-/// and Docker Engine API dumps when the socket is available.
+/// then collects /run container state, and host-side cgroup and namespace evidence.
 pub fn collect_container(store: &mut SnapshotStore) -> Result<(), StoreError> {
     let detected = record_detection(store)?;
 
@@ -30,7 +28,6 @@ pub fn collect_container(store: &mut SnapshotStore) -> Result<(), StoreError> {
     }
 
     runtime::collect_run_state(store)?;
-    docker_api::collect_docker_state(store)?;
 
     let container_pids = namespace::discover_container_pids();
     namespace::collect_namespace_evidence(store, &container_pids)?;

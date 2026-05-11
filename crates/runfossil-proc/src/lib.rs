@@ -1,8 +1,12 @@
 #![forbid(unsafe_code)]
 #![doc = "Procfs and sysfs collectors for runfossil. Reads /proc and /sys runtime evidence without external commands."]
 
+pub(crate) mod crash;
 pub(crate) mod dev;
 pub(crate) mod kmsg;
+pub(crate) mod run;
+pub(crate) mod scheduler;
+pub(crate) mod security;
 pub(crate) mod sys;
 
 use std::path::{Path, PathBuf};
@@ -340,6 +344,31 @@ fn p1_process_targets() -> Vec<ProcPerProcess> {
             relative: "exe",
             kind: ObjectKind::Symlink,
         },
+        ProcPerProcess {
+            name: "environ",
+            relative: "environ",
+            kind: ObjectKind::File,
+        },
+        ProcPerProcess {
+            name: "maps",
+            relative: "maps",
+            kind: ObjectKind::File,
+        },
+        ProcPerProcess {
+            name: "smaps_rollup",
+            relative: "smaps_rollup",
+            kind: ObjectKind::File,
+        },
+        ProcPerProcess {
+            name: "stack",
+            relative: "stack",
+            kind: ObjectKind::File,
+        },
+        ProcPerProcess {
+            name: "wchan",
+            relative: "wchan",
+            kind: ObjectKind::File,
+        },
     ]
 }
 
@@ -352,6 +381,7 @@ pub fn collect_proc(store: &mut SnapshotStore) -> Result<(), StoreError> {
     collect_p2_limited(store)?;
     collect_p1_processes(store)?;
     collect_p3_netfilter(store)?;
+    collect_proc_sys(store)?;
     Ok(())
 }
 
@@ -428,6 +458,128 @@ fn collect_p3_netfilter(store: &mut SnapshotStore) -> Result<(), StoreError> {
     Ok(())
 }
 
+/// Collects sysctl-like files from /proc/sys/kernel, /proc/sys/vm,
+/// /proc/sys/fs, and /proc/sys/net.
+fn collect_proc_sys(store: &mut SnapshotStore) -> Result<(), StoreError> {
+    let limits = BoundedTraversalLimits::new(512, 3, 5000);
+    let read_limits = BoundedReadLimits::new(65_536, 200);
+
+    let subdirs: &[(&str, &str, &str)] = &[
+        ("kernel", "sysctl_kernel", "sys_kernel"),
+        ("vm", "sysctl_vm", "sys_vm"),
+        ("fs", "sysctl_fs", "sys_fs"),
+        ("net", "sysctl_net", "sys_net"),
+    ];
+
+    for (subdir, domain, id_prefix) in subdirs {
+        let root = Path::new("/proc/sys").join(subdir);
+        if !root.exists() {
+            continue;
+        }
+        let ctx = SysWalkCtx {
+            base: &root,
+            domain,
+            id_prefix,
+            limits,
+            read_limits,
+        };
+        walk_proc_sys_subdir(store, &ctx, &root, 0)?;
+    }
+
+    Ok(())
+}
+
+struct SysWalkCtx<'a> {
+    base: &'a Path,
+    domain: &'a str,
+    id_prefix: &'a str,
+    limits: BoundedTraversalLimits,
+    read_limits: BoundedReadLimits,
+}
+
+fn walk_proc_sys_subdir(
+    store: &mut SnapshotStore,
+    ctx: &SysWalkCtx<'_>,
+    current: &Path,
+    depth: u32,
+) -> Result<(), StoreError> {
+    if depth >= ctx.limits.max_depth {
+        return Ok(());
+    }
+
+    let listing = match list_dir_entries(current, ctx.limits) {
+        Ok(listing) => listing,
+        Err(error) => {
+            let status = fs_error_to_manifest_status(&error);
+            let entry = ManifestEntry::new(
+                format!("proc.{}.status", ctx.id_prefix),
+                SourceSlug::Proc,
+                ctx.domain,
+                "status",
+                ObjectKind::Metadata,
+                status,
+            )
+            .with_reason(error.to_string())
+            .with_limits(ObjectLimits::new(0, ctx.limits.timeout_ms, 1, 0));
+            store.record_object(entry)?;
+            return Ok(());
+        }
+    };
+
+    for entry in &listing.entries {
+        let source_path = current.join(&entry.name);
+
+        if entry.is_dir {
+            walk_proc_sys_subdir(store, ctx, &source_path, depth + 1)?;
+        } else {
+            let rel = source_path.strip_prefix(ctx.base).unwrap_or(&source_path);
+            let name = rel.to_string_lossy().replace('/', ".");
+            let proc_prefix = Path::new("/proc/");
+            let object = source_path
+                .strip_prefix(proc_prefix)
+                .unwrap_or(&source_path)
+                .to_string_lossy()
+                .into_owned();
+
+            match read_file_bounded(&source_path, ctx.read_limits) {
+                Ok(result) => {
+                    let out_path = output_path(&source_path);
+                    let bytes = result.content.len() as u64;
+                    store.write_raw_file(&out_path, &result.content)?;
+
+                    let status = if result.was_truncated {
+                        ManifestStatus::Truncated
+                    } else {
+                        ManifestStatus::Captured
+                    };
+
+                    let manifest_entry = ManifestEntry::new(
+                        format!("proc.{}.{name}", ctx.id_prefix),
+                        SourceSlug::Proc,
+                        ctx.domain,
+                        object,
+                        ObjectKind::File,
+                        status,
+                    )
+                    .with_path(out_path.to_string_lossy())
+                    .with_bytes(bytes)
+                    .with_limits(ObjectLimits::new(
+                        ctx.read_limits.max_bytes,
+                        ctx.read_limits.timeout_ms,
+                        1,
+                        0,
+                    ));
+
+                    store.record_object(manifest_entry)?;
+                }
+                Err(_error) => {}
+            }
+        }
+    }
+
+    Ok(())
+}
+
 /// Collects all /sys evidence into the given store.
 ///
 /// Includes cgroup version detection, pstore capture, power state,
@@ -452,6 +604,29 @@ pub fn collect_dev(store: &mut SnapshotStore) -> Result<(), StoreError> {
 /// absent.
 pub fn collect_kmsg(store: &mut SnapshotStore) -> Result<(), StoreError> {
     kmsg::collect_kmsg(store)
+}
+
+/// Collects security subsystem state (SELinux, AppArmor, LSM info).
+pub fn collect_security(store: &mut SnapshotStore) -> Result<(), StoreError> {
+    security::collect_security(store)
+}
+
+/// Collects scheduler state (systemd timers, cron, at jobs).
+pub fn collect_scheduler(store: &mut SnapshotStore) -> Result<(), StoreError> {
+    scheduler::collect_scheduler(store)
+}
+
+/// Collects crash dump state (kdump, core_pattern, coredump dir).
+pub fn collect_crash(store: &mut SnapshotStore) -> Result<(), StoreError> {
+    crash::collect_crash(store)
+}
+
+/// Collects `/run` runtime state (Linux host state, not container-specific).
+///
+/// Includes systemd state, user runtime directories, lock files, pid files,
+/// udev data, and dbus state.
+pub fn collect_run(store: &mut SnapshotStore) -> Result<(), StoreError> {
+    run::collect_run(store)
 }
 
 pub(crate) fn now_ns() -> String {
@@ -662,6 +837,8 @@ fn collect_p1_processes(store: &mut SnapshotStore) -> Result<(), StoreError> {
         collect_process_files(store, pid, &per_process, file_limits)?;
         collect_process_fds(store, pid, fds_limits)?;
         collect_process_ns(store, pid, ns_limits)?;
+        collect_process_fdinfo(store, pid, fds_limits)?;
+        collect_process_threads(store, pid)?;
     }
 
     Ok(())
@@ -938,6 +1115,229 @@ fn collect_process_ns(
     Ok(())
 }
 
+fn collect_process_fdinfo(
+    store: &mut SnapshotStore,
+    pid: u32,
+    limits: BoundedTraversalLimits,
+) -> Result<(), StoreError> {
+    let fdinfo_dir = Path::new("/proc").join(pid.to_string()).join("fdinfo");
+
+    match list_dir_entries(&fdinfo_dir, limits) {
+        Ok(ListResult {
+            entries,
+            was_truncated,
+        }) => {
+            let read_limits = BoundedReadLimits::per_process();
+
+            for entry in &entries {
+                if entry.is_dir {
+                    continue;
+                }
+
+                let source_path = fdinfo_dir.join(&entry.name);
+                match read_file_bounded(&source_path, read_limits) {
+                    Ok(result) => {
+                        let out_path = output_path(&source_path);
+                        let bytes = result.content.len() as u64;
+                        store.write_raw_file(&out_path, &result.content)?;
+
+                        let status = if result.was_truncated {
+                            ManifestStatus::Truncated
+                        } else {
+                            ManifestStatus::Captured
+                        };
+
+                        let file_entry = ManifestEntry::new(
+                            format!("proc.process.{pid}.fdinfo.{}", entry.name),
+                            SourceSlug::Proc,
+                            "process",
+                            format!("{pid}/fdinfo/{}", entry.name),
+                            ObjectKind::File,
+                            status,
+                        )
+                        .with_path(out_path.to_string_lossy())
+                        .with_bytes(bytes)
+                        .with_limits(ObjectLimits::new(
+                            read_limits.max_bytes,
+                            read_limits.timeout_ms,
+                            1,
+                            0,
+                        ));
+
+                        store.record_object(file_entry)?;
+                    }
+                    Err(error) => {
+                        let status = fs_error_to_manifest_status(&error);
+                        let file_entry = ManifestEntry::new(
+                            format!("proc.process.{pid}.fdinfo.{}", entry.name),
+                            SourceSlug::Proc,
+                            "process",
+                            format!("{pid}/fdinfo/{}", entry.name),
+                            ObjectKind::File,
+                            status,
+                        )
+                        .with_reason(error.to_string())
+                        .with_limits(ObjectLimits::new(
+                            read_limits.max_bytes,
+                            read_limits.timeout_ms,
+                            1,
+                            0,
+                        ));
+
+                        store.record_object(file_entry)?;
+                    }
+                }
+            }
+
+            let dir_status = if was_truncated {
+                ManifestStatus::Truncated
+            } else {
+                ManifestStatus::Captured
+            };
+            let dir_entry = ManifestEntry::new(
+                format!("proc.process.{pid}.fdinfo"),
+                SourceSlug::Proc,
+                "process",
+                format!("{pid}/fdinfo"),
+                ObjectKind::DirListing,
+                dir_status,
+            )
+            .with_limits(ObjectLimits::new(
+                0,
+                limits.timeout_ms,
+                limits.max_files,
+                limits.max_depth,
+            ));
+
+            store.record_object(dir_entry)?;
+        }
+        Err(error) => {
+            let status = fs_error_to_manifest_status(&error);
+            let entry = ManifestEntry::new(
+                format!("proc.process.{pid}.fdinfo"),
+                SourceSlug::Proc,
+                "process",
+                format!("{pid}/fdinfo"),
+                ObjectKind::DirListing,
+                status,
+            )
+            .with_reason(error.to_string())
+            .with_limits(ObjectLimits::new(
+                0,
+                limits.timeout_ms,
+                limits.max_files,
+                limits.max_depth,
+            ));
+
+            store.record_object(entry)?;
+        }
+    }
+
+    Ok(())
+}
+
+fn collect_process_threads(store: &mut SnapshotStore, pid: u32) -> Result<(), StoreError> {
+    let task_dir = Path::new("/proc").join(pid.to_string()).join("task");
+    let limits = BoundedTraversalLimits::new(64, 1, 200);
+
+    match list_dir_entries(&task_dir, limits) {
+        Ok(ListResult {
+            entries,
+            was_truncated,
+        }) => {
+            let read_limits = BoundedReadLimits::per_process();
+
+            for entry in &entries {
+                if !entry.is_dir {
+                    continue;
+                }
+                let tid = &entry.name;
+
+                for file_name in &["status", "stat"] {
+                    let source_path = task_dir.join(tid).join(file_name);
+                    match read_file_bounded(&source_path, read_limits) {
+                        Ok(result) => {
+                            let out_path = output_path(&source_path);
+                            let bytes = result.content.len() as u64;
+                            store.write_raw_file(&out_path, &result.content)?;
+
+                            let status = if result.was_truncated {
+                                ManifestStatus::Truncated
+                            } else {
+                                ManifestStatus::Captured
+                            };
+
+                            let file_entry = ManifestEntry::new(
+                                format!("proc.process.{pid}.thread.{tid}.{file_name}"),
+                                SourceSlug::Proc,
+                                "process",
+                                format!("{pid}/task/{tid}/{file_name}"),
+                                ObjectKind::File,
+                                status,
+                            )
+                            .with_path(out_path.to_string_lossy())
+                            .with_bytes(bytes)
+                            .with_limits(ObjectLimits::new(
+                                read_limits.max_bytes,
+                                read_limits.timeout_ms,
+                                1,
+                                0,
+                            ));
+
+                            store.record_object(file_entry)?;
+                        }
+                        Err(_error) => {}
+                    }
+                }
+            }
+
+            let dir_status = if was_truncated {
+                ManifestStatus::Truncated
+            } else {
+                ManifestStatus::Captured
+            };
+            let dir_entry = ManifestEntry::new(
+                format!("proc.process.{pid}.threads"),
+                SourceSlug::Proc,
+                "process",
+                format!("{pid}/task"),
+                ObjectKind::DirListing,
+                dir_status,
+            )
+            .with_limits(ObjectLimits::new(
+                0,
+                limits.timeout_ms,
+                limits.max_files,
+                limits.max_depth,
+            ));
+
+            store.record_object(dir_entry)?;
+        }
+        Err(error) => {
+            let status = fs_error_to_manifest_status(&error);
+            let entry = ManifestEntry::new(
+                format!("proc.process.{pid}.threads"),
+                SourceSlug::Proc,
+                "process",
+                format!("{pid}/task"),
+                ObjectKind::DirListing,
+                status,
+            )
+            .with_reason(error.to_string())
+            .with_limits(ObjectLimits::new(
+                0,
+                limits.timeout_ms,
+                limits.max_files,
+                limits.max_depth,
+            ));
+
+            store.record_object(entry)?;
+        }
+    }
+
+    Ok(())
+}
+
 pub(crate) fn fs_error_to_manifest_status(error: &FsError) -> ManifestStatus {
     match error {
         FsError::NotFound(_) => ManifestStatus::NotFound,
@@ -1146,6 +1546,17 @@ mod tests {
     }
 
     #[test]
+    fn run_collector_returns_ok_when_dirs_absent() {
+        let d = dir();
+        let mut store = new_store(&d);
+        let result = collect_run(&mut store);
+        assert!(
+            result.is_ok(),
+            "run collector should return Ok even when /run dirs are absent"
+        );
+    }
+
+    #[test]
     fn now_ns_is_a_timestamp_string() {
         let ns = now_ns();
         let parsed: u64 = ns.parse().unwrap();
@@ -1158,7 +1569,7 @@ mod tests {
     #[test]
     fn p1_process_targets_are_counted() {
         let targets = p1_process_targets();
-        assert_eq!(targets.len(), 14, "expected 14 per-process file targets");
+        assert_eq!(targets.len(), 19, "expected 19 per-process file targets");
     }
 
     #[test]
@@ -1179,5 +1590,38 @@ mod tests {
         assert!(names.contains(&"shm"));
         assert!(names.contains(&"msg"));
         assert!(names.contains(&"sem"));
+    }
+
+    #[test]
+    fn security_collector_returns_ok_when_dirs_absent() {
+        let d = dir();
+        let mut store = new_store(&d);
+        let result = collect_security(&mut store);
+        assert!(
+            result.is_ok(),
+            "security collector should return Ok even when source dirs are absent"
+        );
+    }
+
+    #[test]
+    fn scheduler_collector_returns_ok_when_dirs_absent() {
+        let d = dir();
+        let mut store = new_store(&d);
+        let result = collect_scheduler(&mut store);
+        assert!(
+            result.is_ok(),
+            "scheduler collector should return Ok even when source dirs are absent"
+        );
+    }
+
+    #[test]
+    fn crash_collector_returns_ok_when_dirs_absent() {
+        let d = dir();
+        let mut store = new_store(&d);
+        let result = collect_crash(&mut store);
+        assert!(
+            result.is_ok(),
+            "crash collector should return Ok even when source dirs are absent"
+        );
     }
 }

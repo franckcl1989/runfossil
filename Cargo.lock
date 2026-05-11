@@ -307,6 +307,7 @@ dependencies = [
  "runfossil-core",
  "runfossil-fs",
  "runfossil-store",
+ "tempfile",
 ]
 
 [[package]]
@@ -358,6 +359,7 @@ dependencies = [
  "runfossil-core",
  "runfossil-fs",
  "runfossil-store",
+ "tempfile",
 ]
 
 [[package]]

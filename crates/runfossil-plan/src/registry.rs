@@ -296,6 +296,17 @@ pub(crate) fn coverage_registry() -> Vec<CoverageUnit> {
     ));
 
     units.push(CoverageUnit::new(
+        "proc.net_mountstats",
+        SourceSlug::Proc,
+        "mount_fs",
+        "self/mountstats",
+        CoverageDecision::Collect,
+        Priority::P2,
+        ObjectKind::File,
+        false,
+    ));
+
+    units.push(CoverageUnit::new(
         "proc.net_dev",
         SourceSlug::Proc,
         "network",
@@ -325,6 +336,160 @@ pub(crate) fn coverage_registry() -> Vec<CoverageUnit> {
         CoverageDecision::Collect,
         Priority::P0,
         ObjectKind::File,
+        false,
+    ));
+
+    units.push(CoverageUnit::new(
+        "proc.net_tcp",
+        SourceSlug::Proc,
+        "network",
+        "net/tcp",
+        CoverageDecision::Collect,
+        Priority::P0,
+        ObjectKind::File,
+        false,
+    ));
+
+    units.push(CoverageUnit::new(
+        "proc.net_tcp6",
+        SourceSlug::Proc,
+        "network",
+        "net/tcp6",
+        CoverageDecision::Collect,
+        Priority::P0,
+        ObjectKind::File,
+        false,
+    ));
+
+    units.push(CoverageUnit::new(
+        "proc.net_udp",
+        SourceSlug::Proc,
+        "network",
+        "net/udp",
+        CoverageDecision::Collect,
+        Priority::P0,
+        ObjectKind::File,
+        false,
+    ));
+
+    units.push(CoverageUnit::new(
+        "proc.net_udp6",
+        SourceSlug::Proc,
+        "network",
+        "net/udp6",
+        CoverageDecision::Collect,
+        Priority::P0,
+        ObjectKind::File,
+        false,
+    ));
+
+    units.push(CoverageUnit::new(
+        "proc.net_unix",
+        SourceSlug::Proc,
+        "network",
+        "net/unix",
+        CoverageDecision::Collect,
+        Priority::P0,
+        ObjectKind::File,
+        false,
+    ));
+
+    units.push(CoverageUnit::new(
+        "proc.net_raw",
+        SourceSlug::Proc,
+        "network",
+        "net/raw",
+        CoverageDecision::Collect,
+        Priority::P0,
+        ObjectKind::File,
+        false,
+    ));
+
+    units.push(CoverageUnit::new(
+        "proc.net_packet",
+        SourceSlug::Proc,
+        "network",
+        "net/packet",
+        CoverageDecision::Collect,
+        Priority::P0,
+        ObjectKind::File,
+        false,
+    ));
+
+    units.push(CoverageUnit::new(
+        "proc.net_arp",
+        SourceSlug::Proc,
+        "network",
+        "net/arp",
+        CoverageDecision::Collect,
+        Priority::P0,
+        ObjectKind::File,
+        false,
+    ));
+
+    units.push(CoverageUnit::new(
+        "proc.net_route",
+        SourceSlug::Proc,
+        "network",
+        "net/route",
+        CoverageDecision::Collect,
+        Priority::P0,
+        ObjectKind::File,
+        false,
+    ));
+
+    units.push(CoverageUnit::new(
+        "proc.net_ipv6_route",
+        SourceSlug::Proc,
+        "network",
+        "net/ipv6_route",
+        CoverageDecision::Collect,
+        Priority::P0,
+        ObjectKind::File,
+        false,
+    ));
+
+    units.push(CoverageUnit::new(
+        "proc.net_dev_mcast",
+        SourceSlug::Proc,
+        "network",
+        "net/dev_mcast",
+        CoverageDecision::Collect,
+        Priority::P2,
+        ObjectKind::File,
+        false,
+    ));
+
+    units.push(CoverageUnit::new(
+        "proc.net_igmp",
+        SourceSlug::Proc,
+        "network",
+        "net/igmp",
+        CoverageDecision::Collect,
+        Priority::P2,
+        ObjectKind::File,
+        false,
+    ));
+
+    units.push(CoverageUnit::new(
+        "proc.net_igmp6",
+        SourceSlug::Proc,
+        "network",
+        "net/igmp6",
+        CoverageDecision::Collect,
+        Priority::P2,
+        ObjectKind::File,
+        false,
+    ));
+
+    units.push(CoverageUnit::new(
+        "proc.net_netfilter",
+        SourceSlug::Proc,
+        "network",
+        "net/netfilter",
+        CoverageDecision::Limited,
+        Priority::P3,
+        ObjectKind::FileSet,
         false,
     ));
 
@@ -670,6 +835,17 @@ pub(crate) fn coverage_registry() -> Vec<CoverageUnit> {
     ));
 
     units.push(CoverageUnit::new(
+        "sys.power_supply",
+        SourceSlug::Sys,
+        "power_supply",
+        "class/power_supply",
+        CoverageDecision::Collect,
+        Priority::P2,
+        ObjectKind::BoundedTree,
+        false,
+    ));
+
+    units.push(CoverageUnit::new(
         "kmsg.bounded_window",
         SourceSlug::Kernel,
         "kmsg",
@@ -930,6 +1106,347 @@ pub(crate) fn coverage_registry() -> Vec<CoverageUnit> {
         CoverageDecision::Limited,
         Priority::P3,
         ObjectKind::MetadataOnly,
+        false,
+    ));
+
+    units.push(CoverageUnit::new(
+        "proc.process_environ",
+        SourceSlug::Proc,
+        "process",
+        "<pid>/environ",
+        CoverageDecision::Collect,
+        Priority::P1,
+        ObjectKind::File,
+        true,
+    ));
+
+    units.push(CoverageUnit::new(
+        "proc.process_fdinfo",
+        SourceSlug::Proc,
+        "process",
+        "<pid>/fdinfo",
+        CoverageDecision::Conditional,
+        Priority::P3,
+        ObjectKind::DirListing,
+        true,
+    ));
+
+    units.push(CoverageUnit::new(
+        "proc.process_maps",
+        SourceSlug::Proc,
+        "process",
+        "<pid>/maps",
+        CoverageDecision::Collect,
+        Priority::P2,
+        ObjectKind::File,
+        true,
+    ));
+
+    units.push(CoverageUnit::new(
+        "proc.process_smaps_rollup",
+        SourceSlug::Proc,
+        "process",
+        "<pid>/smaps_rollup",
+        CoverageDecision::Collect,
+        Priority::P2,
+        ObjectKind::File,
+        true,
+    ));
+
+    units.push(CoverageUnit::new(
+        "proc.process_numa_maps",
+        SourceSlug::Proc,
+        "process",
+        "<pid>/numa_maps",
+        CoverageDecision::Conditional,
+        Priority::P3,
+        ObjectKind::File,
+        true,
+    ));
+
+    units.push(CoverageUnit::new(
+        "proc.process_stack",
+        SourceSlug::Proc,
+        "process",
+        "<pid>/stack",
+        CoverageDecision::Collect,
+        Priority::P2,
+        ObjectKind::File,
+        true,
+    ));
+
+    units.push(CoverageUnit::new(
+        "proc.process_wchan",
+        SourceSlug::Proc,
+        "process",
+        "<pid>/wchan",
+        CoverageDecision::Collect,
+        Priority::P2,
+        ObjectKind::File,
+        true,
+    ));
+
+    units.push(CoverageUnit::new(
+        "proc.process_task",
+        SourceSlug::Proc,
+        "process",
+        "<pid>/task/<tid>",
+        CoverageDecision::Conditional,
+        Priority::P3,
+        ObjectKind::DirListing,
+        true,
+    ));
+
+    units.push(CoverageUnit::new(
+        "proc.pagetypeinfo",
+        SourceSlug::Proc,
+        "memory_vm",
+        "pagetypeinfo",
+        CoverageDecision::Conditional,
+        Priority::P3,
+        ObjectKind::File,
+        false,
+    ));
+
+    units.push(CoverageUnit::new(
+        "proc.irq",
+        SourceSlug::Proc,
+        "interrupt_softirq",
+        "irq",
+        CoverageDecision::Limited,
+        Priority::P2,
+        ObjectKind::BoundedTree,
+        true,
+    ));
+
+    units.push(CoverageUnit::new(
+        "proc.keys",
+        SourceSlug::Proc,
+        "crypto",
+        "keys",
+        CoverageDecision::Limited,
+        Priority::P4,
+        ObjectKind::File,
+        true,
+    ));
+
+    units.push(CoverageUnit::new(
+        "proc.timer_list",
+        SourceSlug::Proc,
+        "cpu_scheduler",
+        "timer_list",
+        CoverageDecision::Conditional,
+        Priority::P4,
+        ObjectKind::File,
+        true,
+    ));
+
+    units.push(CoverageUnit::new(
+        "proc.kallsyms",
+        SourceSlug::Proc,
+        "modules",
+        "kallsyms",
+        CoverageDecision::Limited,
+        Priority::P4,
+        ObjectKind::File,
+        true,
+    ));
+
+    units.push(CoverageUnit::new(
+        "proc.net_route_all",
+        SourceSlug::Proc,
+        "network",
+        "net/route",
+        CoverageDecision::Collect,
+        Priority::P0,
+        ObjectKind::File,
+        false,
+    ));
+
+    units.push(CoverageUnit::new(
+        "proc.net_ipv6_route_all",
+        SourceSlug::Proc,
+        "network",
+        "net/ipv6_route",
+        CoverageDecision::Collect,
+        Priority::P0,
+        ObjectKind::File,
+        false,
+    ));
+
+    units.push(CoverageUnit::new(
+        "proc.sys_kernel",
+        SourceSlug::Proc,
+        "sysctl_kernel",
+        "sys/kernel",
+        CoverageDecision::Limited,
+        Priority::P2,
+        ObjectKind::BoundedTree,
+        false,
+    ));
+
+    units.push(CoverageUnit::new(
+        "proc.sys_vm",
+        SourceSlug::Proc,
+        "sysctl_vm",
+        "sys/vm",
+        CoverageDecision::Limited,
+        Priority::P2,
+        ObjectKind::BoundedTree,
+        false,
+    ));
+
+    units.push(CoverageUnit::new(
+        "proc.sys_fs",
+        SourceSlug::Proc,
+        "sysctl_fs",
+        "sys/fs",
+        CoverageDecision::Limited,
+        Priority::P2,
+        ObjectKind::BoundedTree,
+        false,
+    ));
+
+    units.push(CoverageUnit::new(
+        "proc.sys_net",
+        SourceSlug::Proc,
+        "sysctl_net",
+        "sys/net",
+        CoverageDecision::Limited,
+        Priority::P2,
+        ObjectKind::BoundedTree,
+        false,
+    ));
+
+    units.push(CoverageUnit::new(
+        "proc.sys_user",
+        SourceSlug::Proc,
+        "sysctl_user",
+        "sys/user",
+        CoverageDecision::Conditional,
+        Priority::P3,
+        ObjectKind::BoundedTree,
+        false,
+    ));
+
+    units.push(CoverageUnit::new(
+        "proc.process_security",
+        SourceSlug::Proc,
+        "process",
+        "<pid>/security",
+        CoverageDecision::Collect,
+        Priority::P2,
+        ObjectKind::FileSet,
+        true,
+    ));
+
+    units.push(CoverageUnit::new(
+        "service.manager_state",
+        SourceSlug::Service,
+        "manager",
+        "state",
+        CoverageDecision::DeferredNative,
+        Priority::P3,
+        ObjectKind::NativeDump,
+        false,
+    ));
+
+    units.push(CoverageUnit::new(
+        "service.failed_units",
+        SourceSlug::Service,
+        "units",
+        "failed",
+        CoverageDecision::DeferredNative,
+        Priority::P3,
+        ObjectKind::NativeDump,
+        false,
+    ));
+
+    units.push(CoverageUnit::new(
+        "sessions.users",
+        SourceSlug::Sessions,
+        "users",
+        "users",
+        CoverageDecision::DeferredNative,
+        Priority::P3,
+        ObjectKind::NativeDump,
+        false,
+    ));
+
+    units.push(CoverageUnit::new(
+        "security.selinux_enforce",
+        SourceSlug::Security,
+        "selinux",
+        "enforce",
+        CoverageDecision::Conditional,
+        Priority::P3,
+        ObjectKind::BoundedTree,
+        false,
+    ));
+
+    units.push(CoverageUnit::new(
+        "security.apparmor",
+        SourceSlug::Security,
+        "apparmor",
+        "apparmor",
+        CoverageDecision::Conditional,
+        Priority::P3,
+        ObjectKind::BoundedTree,
+        false,
+    ));
+
+    units.push(CoverageUnit::new(
+        "scheduler.timers",
+        SourceSlug::Scheduler,
+        "timers",
+        "timers",
+        CoverageDecision::Conditional,
+        Priority::P3,
+        ObjectKind::BoundedTree,
+        false,
+    ));
+
+    units.push(CoverageUnit::new(
+        "scheduler.cron",
+        SourceSlug::Scheduler,
+        "cron",
+        "cron",
+        CoverageDecision::Conditional,
+        Priority::P3,
+        ObjectKind::BoundedTree,
+        false,
+    ));
+
+    units.push(CoverageUnit::new(
+        "scheduler.at",
+        SourceSlug::Scheduler,
+        "at_jobs",
+        "at",
+        CoverageDecision::Conditional,
+        Priority::P3,
+        ObjectKind::BoundedTree,
+        false,
+    ));
+
+    units.push(CoverageUnit::new(
+        "crash.kdump",
+        SourceSlug::Crash,
+        "kdump",
+        "kdump",
+        CoverageDecision::Conditional,
+        Priority::P3,
+        ObjectKind::Metadata,
+        true,
+    ));
+
+    units.push(CoverageUnit::new(
+        "crash.coredump",
+        SourceSlug::Crash,
+        "coredump",
+        "coredump",
+        CoverageDecision::Conditional,
+        Priority::P3,
+        ObjectKind::DirListing,
         false,
     ));
 

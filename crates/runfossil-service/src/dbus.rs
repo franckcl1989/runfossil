@@ -142,8 +142,162 @@ fn append_string_to_body(buf: &mut Vec<u8>, value: &str) {
     buf[offset + 4..offset + 4 + raw.len()].copy_from_slice(raw);
 }
 
-fn align_up(offset: usize, alignment: usize) -> usize {
+pub(crate) fn align_up(offset: usize, alignment: usize) -> usize {
     (offset + alignment - 1) & !(alignment - 1)
+}
+
+pub(crate) fn take_dbus_string(data: &[u8]) -> Option<(&str, &[u8])> {
+    if data.len() < 4 {
+        return None;
+    }
+    let len = u32::from_ne_bytes([data[0], data[1], data[2], data[3]]) as usize;
+    let rest = &data[4..];
+    if rest.len() < len + 1 {
+        return None;
+    }
+    let s = std::str::from_utf8(&rest[..len]).ok()?;
+    Some((s, &rest[len + 1..]))
+}
+
+pub(crate) fn take_variant_string(data: &[u8]) -> Option<(&str, &[u8])> {
+    if data.is_empty() {
+        return None;
+    }
+    let sig_len = data[0] as usize;
+    let header_end = 1 + sig_len + 1;
+    let aligned = align_up(header_end, 4);
+    if data.len() <= aligned {
+        return None;
+    }
+    take_dbus_string(&data[aligned..])
+}
+
+fn dbus_read_string_at(data: &[u8], pos: usize) -> Option<(&str, usize)> {
+    let aligned = align_up(pos, 4);
+    if aligned + 4 > data.len() {
+        return None;
+    }
+    let len = u32::from_ne_bytes([
+        data[aligned],
+        data[aligned + 1],
+        data[aligned + 2],
+        data[aligned + 3],
+    ]) as usize;
+    let str_start = aligned + 4;
+    if str_start + len + 1 > data.len() {
+        return None;
+    }
+    let s = std::str::from_utf8(&data[str_start..str_start + len]).ok()?;
+    Some((s, str_start + len + 1))
+}
+
+fn dbus_skip_string_at(data: &[u8], pos: usize) -> Option<usize> {
+    let aligned = align_up(pos, 4);
+    if aligned + 4 > data.len() {
+        return None;
+    }
+    let len = u32::from_ne_bytes([
+        data[aligned],
+        data[aligned + 1],
+        data[aligned + 2],
+        data[aligned + 3],
+    ]) as usize;
+    let str_start = aligned + 4;
+    if str_start + len + 1 > data.len() {
+        return None;
+    }
+    Some(str_start + len + 1)
+}
+
+pub(crate) fn extract_list_units_names(body: &[u8], max: usize) -> Vec<(&str, String)> {
+    let mut result = Vec::new();
+    if body.len() < 4 {
+        return result;
+    }
+    let array_bytes = u32::from_ne_bytes([body[0], body[1], body[2], body[3]]) as usize;
+    let array_end = 4 + array_bytes;
+    if body.len() < array_end {
+        return result;
+    }
+    let mut pos: usize = 4;
+    while pos < array_end && result.len() < max {
+        pos = align_up(pos, 8);
+        if pos >= array_end {
+            break;
+        }
+
+        let (name, after_name) = match dbus_read_string_at(body, pos) {
+            Some(v) => v,
+            None => break,
+        };
+        let mut p = after_name;
+
+        for _ in 0..5 {
+            p = match dbus_skip_string_at(body, p) {
+                Some(v) => v,
+                None => break,
+            };
+        }
+        p = match dbus_skip_string_at(body, p) {
+            Some(v) => v,
+            None => break,
+        };
+        p = align_up(p, 4) + 4;
+        p = match dbus_skip_string_at(body, p) {
+            Some(v) => v,
+            None => break,
+        };
+        p = match dbus_skip_string_at(body, p) {
+            Some(v) => v,
+            None => break,
+        };
+
+        result.push((name, String::new()));
+        pos = align_up(p, 8);
+    }
+    result
+}
+
+pub(crate) fn extract_list_sessions_ids(body: &[u8], max: usize) -> Vec<(&str, String)> {
+    let mut result = Vec::new();
+    if body.len() < 4 {
+        return result;
+    }
+    let array_bytes = u32::from_ne_bytes([body[0], body[1], body[2], body[3]]) as usize;
+    let array_end = 4 + array_bytes;
+    if body.len() < array_end {
+        return result;
+    }
+    let mut pos: usize = 4;
+    while pos < array_end && result.len() < max {
+        pos = align_up(pos, 8);
+        if pos >= array_end {
+            break;
+        }
+
+        let (id, after_id) = match dbus_read_string_at(body, pos) {
+            Some(v) => v,
+            None => break,
+        };
+        let mut p = after_id;
+
+        p = align_up(p, 4) + 4;
+
+        for _ in 0..3 {
+            p = match dbus_skip_string_at(body, p) {
+                Some(v) => v,
+                None => break,
+            };
+        }
+
+        result.push((id, String::new()));
+        pos = align_up(p, 8);
+    }
+    result
+}
+
+pub(crate) fn parse_object_path(body: &[u8]) -> Option<&str> {
+    take_dbus_string(body).map(|(s, _)| s)
 }
 
 struct AlignedWriter {

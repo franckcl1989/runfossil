@@ -77,6 +77,14 @@ pub(crate) fn collect_sys(store: &mut SnapshotStore) -> Result<(), StoreError> {
     collect_power(store)?;
     collect_class_net(store)?;
     collect_block(store)?;
+    collect_devices_cpu(store)?;
+    collect_devices_node(store)?;
+    collect_hwmon(store)?;
+    collect_thermal(store)?;
+    collect_module_sys(store)?;
+    collect_kernel_sys(store)?;
+    collect_firmware_sys(store)?;
+    collect_power_supply(store)?;
     Ok(())
 }
 
@@ -503,4 +511,236 @@ fn collect_bounded_device_tree(
     }
 
     Ok(())
+}
+
+fn collect_devices_cpu(store: &mut SnapshotStore) -> Result<(), StoreError> {
+    let root = Path::new("/sys/devices/system/cpu");
+    if !root.exists() {
+        return Ok(());
+    }
+    collect_bounded_device_tree(
+        store,
+        root,
+        "devices_cpu",
+        &[
+            "cpufreq/scaling_governor",
+            "cpufreq/scaling_cur_freq",
+            "cpufreq/cpuinfo_max_freq",
+            "cpufreq/cpuinfo_min_freq",
+            "cpufreq/scaling_available_governors",
+            "topology/core_id",
+            "topology/physical_package_id",
+            "topology/thread_siblings_list",
+            "cache/index0/coherency_line_size",
+            "cache/index0/number_of_sets",
+            "cache/index0/size",
+            "cache/index0/type",
+            "cache/index1/size",
+            "cache/index1/type",
+            "cache/index2/size",
+            "cache/index2/type",
+            "cache/index3/size",
+            "cache/index3/type",
+            "power/energy_perf_bias",
+            "online",
+        ],
+        1_048_576,
+        64,
+        3,
+    )
+}
+
+fn collect_devices_node(store: &mut SnapshotStore) -> Result<(), StoreError> {
+    let root = Path::new("/sys/devices/system/node");
+    if !root.exists() {
+        return Ok(());
+    }
+    collect_bounded_device_tree(
+        store,
+        root,
+        "devices_node",
+        &[
+            "cpumap",
+            "meminfo",
+            "distance",
+            "compact",
+            "hugepages/hugepages-2048kB/nr_hugepages",
+            "hugepages/hugepages-1048576kB/nr_hugepages",
+            "vmstat",
+            "numastat",
+        ],
+        1_048_576,
+        32,
+        3,
+    )
+}
+
+fn collect_hwmon(store: &mut SnapshotStore) -> Result<(), StoreError> {
+    let root = Path::new("/sys/class/hwmon");
+    if !root.exists() {
+        return Ok(());
+    }
+    collect_bounded_device_tree(
+        store,
+        root,
+        "hwmon",
+        &[
+            "name",
+            "temp1_input",
+            "temp1_max",
+            "temp1_crit",
+            "temp1_label",
+            "fan1_input",
+            "fan1_min",
+            "fan1_label",
+            "in0_input",
+            "in0_label",
+            "curr1_input",
+            "power1_input",
+        ],
+        1_048_576,
+        64,
+        2,
+    )
+}
+
+fn collect_thermal(store: &mut SnapshotStore) -> Result<(), StoreError> {
+    let root = Path::new("/sys/class/thermal");
+    if !root.exists() {
+        return Ok(());
+    }
+    collect_bounded_device_tree(
+        store,
+        root,
+        "thermal",
+        &[
+            "type",
+            "temp",
+            "mode",
+            "policy",
+            "trip_point_0_temp",
+            "trip_point_0_type",
+            "trip_point_1_temp",
+            "trip_point_1_type",
+            "cooling_device",
+        ],
+        1_048_576,
+        32,
+        2,
+    )
+}
+
+fn collect_module_sys(store: &mut SnapshotStore) -> Result<(), StoreError> {
+    let root = Path::new("/sys/module");
+    if !root.exists() {
+        return Ok(());
+    }
+    collect_bounded_device_tree(
+        store,
+        root,
+        "module",
+        &[
+            "version",
+            "parameters",
+            "refcnt",
+            "holders",
+            "sections/.text",
+            "sections/.data",
+            "sections/.bss",
+        ],
+        1_048_576,
+        256,
+        3,
+    )
+}
+
+fn collect_kernel_sys(store: &mut SnapshotStore) -> Result<(), StoreError> {
+    let root = Path::new("/sys/kernel");
+    if !root.exists() {
+        return Ok(());
+    }
+    collect_bounded_device_tree(
+        store,
+        root,
+        "kernel",
+        &[
+            "uevent_seqnum",
+            "kexec_crash_loaded",
+            "kexec_crash_size",
+            "vmcoreinfo",
+            "mm/mempolicy",
+            "mm/pages_to_scan",
+            "notes",
+            "tracing/trace",
+            "tracing/current_tracer",
+            "tracing/available_tracers",
+        ],
+        1_048_576,
+        64,
+        3,
+    )
+}
+
+fn collect_firmware_sys(store: &mut SnapshotStore) -> Result<(), StoreError> {
+    let root = Path::new("/sys/firmware");
+    if !root.exists() {
+        return Ok(());
+    }
+    collect_bounded_device_tree(
+        store,
+        root,
+        "firmware",
+        &[
+            "acpi/pm_profile",
+            "acpi/tables/APIC",
+            "acpi/tables/FACP",
+            "dmi/id/bios_vendor",
+            "dmi/id/bios_version",
+            "dmi/id/board_vendor",
+            "dmi/id/board_name",
+            "dmi/id/product_name",
+            "dmi/id/product_version",
+            "dmi/id/sys_vendor",
+            "memmap",
+            "efi/fw_vendor",
+            "efi/fw_platform_size",
+            "efi/runtime",
+        ],
+        1_048_576,
+        128,
+        3,
+    )
+}
+
+fn collect_power_supply(store: &mut SnapshotStore) -> Result<(), StoreError> {
+    let root = Path::new("/sys/class/power_supply");
+    if !root.exists() {
+        return Ok(());
+    }
+    collect_bounded_device_tree(
+        store,
+        root,
+        "power_supply",
+        &[
+            "type",
+            "status",
+            "capacity",
+            "capacity_level",
+            "voltage_now",
+            "current_now",
+            "power_now",
+            "energy_now",
+            "energy_full",
+            "energy_full_design",
+            "health",
+            "technology",
+            "present",
+            "model_name",
+            "manufacturer",
+            "serial_number",
+        ],
+        1_048_576,
+        32,
+        2,
+    )
 }
