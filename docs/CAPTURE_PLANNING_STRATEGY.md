@@ -1,10 +1,10 @@
-# Dynamic Capture Planner v1
+# Capture Planning Strategy
 
 ## Purpose
 
-The planner decides what `runfossil` should capture on the current host without
-requiring user configuration. It balances evidence value, runtime cost, host
-pressure, and collector risk.
+The capture planner decides what `runfossil` should capture on the current host
+without requiring user configuration. It balances evidence value, runtime cost,
+host pressure, and collector risk.
 
 The planner is not a diagnostic engine. It does not decide what caused the
 incident. It decides how to preserve the most useful evidence with the least
@@ -22,7 +22,7 @@ production impact.
 
 ## Planning Phases
 
-The v1 planner runs four phases:
+The baseline planner runs four phases:
 
 ```text
 probe -> score -> budget -> execute
@@ -369,7 +369,7 @@ Skipping must be explicit. Valid skip reasons include:
 - Parent task failed.
 - Equivalent higher-value source already captured.
 - Task exceeds scale threshold.
-- Task requires a risky interface not enabled in v1.
+- Task requires a risky interface not enabled in the initial release.
 
 Skipped objects should appear in `plan.json`; important skipped objects should
 also appear in the manifest.

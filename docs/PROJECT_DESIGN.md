@@ -213,7 +213,7 @@ redaction tooling.
 
 ## Success Criteria
 
-A successful v1 design supports these outcomes:
+The initial design baseline supports these outcomes:
 
 - A root user can run one capture command during an incident.
 - The capture command preserves a useful raw snapshot without external tools.

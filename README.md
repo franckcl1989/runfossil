@@ -25,12 +25,12 @@ on the production host.
 
 - [Project Design](docs/PROJECT_DESIGN.md)
 - [Architecture](docs/ARCHITECTURE.md)
-- [Snapshot Format v1](docs/SNAPSHOT_FORMAT_V1.md)
-- [Dynamic Capture Planner v1](docs/DYNAMIC_CAPTURE_PLANNER_V1.md)
+- [Snapshot Specification](docs/SNAPSHOT_SPECIFICATION.md)
+- [Capture Planning Strategy](docs/CAPTURE_PLANNING_STRATEGY.md)
 - [Source Taxonomy](docs/SOURCE_TAXONOMY.md)
 - [Safety and Operations](docs/SAFETY_AND_OPERATIONS.md)
-- [Design Decisions](docs/DESIGN_DECISIONS.md)
-- [Roadmap](docs/ROADMAP.md)
+- [Architectural Decision Record](docs/ARCHITECTURAL_DECISION_RECORD.md)
+- [Implementation Plan](docs/IMPLEMENTATION_PLAN.md)
 
 ## Current Status
 

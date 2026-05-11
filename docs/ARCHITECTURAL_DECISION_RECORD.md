@@ -1,7 +1,7 @@
-# Design Decisions
+# Architectural Decision Record
 
-This document records project-level decisions that should remain stable unless a
-future design review explicitly changes them.
+This record captures project-level architectural decisions that should remain
+stable unless a future design review explicitly changes them.
 
 ## Decision 1: Raw Evidence First
 
@@ -158,12 +158,12 @@ Consequence:
 - The project should avoid unnecessary dependencies when Rust 1.95 provides a
   standard feature.
 
-## Decision 9: Snapshot Format Is a Contract
+## Decision 9: Snapshot Specification Is a Contract
 
 Decision:
 
-Snapshot Format v1 is a project contract, not an incidental implementation
-detail.
+The snapshot specification is a project contract, not an incidental
+implementation detail.
 
 Rationale:
 

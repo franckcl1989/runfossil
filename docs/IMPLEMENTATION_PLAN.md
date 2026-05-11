@@ -1,6 +1,6 @@
-# Roadmap
+# Implementation Plan
 
-## Roadmap Principles
+## Planning Principles
 
 The project should evolve by preserving stable contracts first:
 
@@ -22,11 +22,11 @@ Deliverables:
 
 - Project design.
 - Architecture document.
-- Snapshot Format v1.
-- Dynamic Capture Planner v1.
+- Snapshot specification.
+- Capture planning strategy.
 - Source Taxonomy.
 - Safety and Operations policy.
-- Roadmap.
+- Implementation plan.
 
 Exit criteria:
 
@@ -91,7 +91,7 @@ Exit criteria:
 - Process disappearance races are handled cleanly.
 - Large host scale triggers budget limits instead of unbounded traversal.
 
-## Milestone 4: Planner v1
+## Milestone 4: Adaptive Planner
 
 Deliverables:
 
@@ -196,7 +196,7 @@ These should be answered during implementation:
 - Whether hashes are required for all captured payloads or only small payloads.
 - How much journald support can be implemented natively without excessive
   dependency risk.
-- Which netlink families are v1 versus later.
+- Which netlink families are part of the initial release versus later releases.
 - Which container runtime protocols should be implemented first.
 - Whether hardware management beyond `/sys` should wait until after core
   collectors are stable.

@@ -244,7 +244,7 @@ Parsing is allowed for:
 - Producing stable metadata such as byte counts, timestamps, and task outcomes.
 
 Parsing is not the main product output. Parsed summaries should not replace raw
-evidence in v1.
+evidence in the initial release.
 
 ## Platform Boundary
 

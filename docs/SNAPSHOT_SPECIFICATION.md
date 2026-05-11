@@ -1,9 +1,10 @@
-# Snapshot Format v1
+# Snapshot Specification
 
 ## Goals
 
-Snapshot Format v1 defines the on-disk evidence package produced by
-`runfossil capture`.
+This specification defines the on-disk evidence package produced by
+`runfossil capture`. It is the compatibility contract between the capture
+implementation and offline analysis tools.
 
 The format must be:
 
@@ -28,7 +29,7 @@ Example:
 snapshot-20260509T121530Z-prod-db-01-boot-3f2a9b7c/
 ```
 
-The v1 layout is:
+The baseline layout is:
 
 ```text
 snapshot-.../
@@ -182,7 +183,7 @@ Example:
 ```json
 {
   "schema_version": 1,
-  "planner": "dynamic-v1",
+  "planner": "adaptive-baseline",
   "probes": {
     "root": true,
     "cgroup_version": "v2",
@@ -229,7 +230,7 @@ Sensitive raw data should not be added to error messages.
 
 ## Object Status Vocabulary
 
-V1 status values:
+Baseline status values:
 
 ```text
 captured

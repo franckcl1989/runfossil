@@ -3,9 +3,9 @@
 ## Purpose
 
 This document adapts the Linux runtime raw snapshot taxonomy into the project
-design. It describes collection source families, boundaries, and v1 collection
+design. It describes collection source families, boundaries, and collection
 policy. The taxonomy is not a promise that every object is implemented in the
-first release; it is the map used by the planner and collectors.
+initial release; it is the map used by the planner and collectors.
 
 The model has three layers:
 
@@ -84,7 +84,7 @@ Important domains:
 - Crypto, key, and timer state.
 - Process and thread state.
 
-V1 policy:
+Collection policy:
 
 - P0 for global low-cost files.
 - P1 for process summaries.
@@ -126,7 +126,7 @@ Important domains:
 - IOMMU.
 - Bus, device, and driver trees.
 
-V1 policy:
+Collection policy:
 
 - Capture known high-value subtrees with depth and file limits.
 - Avoid blind full `/sys` recursion.
@@ -150,7 +150,7 @@ Important domains:
 - D-Bus runtime.
 - Resolver runtime.
 
-V1 policy:
+Collection policy:
 
 - Capture metadata, socket presence, small runtime files, and known state
   locations.
@@ -174,7 +174,7 @@ Important domains:
 - Randomness and kernel message devices.
 - Pseudo devices.
 
-V1 policy:
+Collection policy:
 
 - Capture directory listings, device metadata, symlink targets, major/minor
   numbers, and permissions.
@@ -197,7 +197,7 @@ Important domains:
 - Filesystem events.
 - Network kernel events.
 
-V1 policy:
+Collection policy:
 
 - Capture bounded event windows.
 - Expand relevant windows when incident signals appear.
@@ -219,7 +219,7 @@ Important domains:
 - Container event windows.
 - Audit event windows.
 
-V1 policy:
+Collection policy:
 
 - Native implementation only.
 - No `journalctl` or log command invocation.
@@ -241,7 +241,7 @@ Important domains:
 - Timer unit state.
 - Failed or degraded state.
 
-V1 policy:
+Collection policy:
 
 - systemd is the primary target.
 - Native protocol support is required.
@@ -265,7 +265,7 @@ Important domains:
 - Traffic control.
 - XFRM.
 
-V1 policy:
+Collection policy:
 
 - Prefer netlink for data that is more complete or reliable than procfs.
 - Preserve raw responses or stable serialized records.
@@ -286,7 +286,7 @@ Important domains:
 - Audit.
 - Privilege events.
 
-V1 policy:
+Collection policy:
 
 - Capture process security state visible through procfs and securityfs.
 - Capture audit state only through native support.
@@ -307,7 +307,7 @@ Important domains:
 - logind.
 - Interactive process relations.
 
-V1 policy:
+Collection policy:
 
 - Capture runtime files and native protocol state where available.
 - Avoid shelling out to `who`, `w`, `loginctl`, or similar tools.
@@ -325,7 +325,7 @@ Important domains:
 - at and batch runtime.
 - External job runtime.
 
-V1 policy:
+Collection policy:
 
 - Capture running or recent job state when exposed through runtime files or
   native protocols.
@@ -345,7 +345,7 @@ Important domains:
 - systemd-timesyncd.
 - PTP.
 
-V1 policy:
+Collection policy:
 
 - Capture local clock metadata.
 - Capture service state natively when supported.
@@ -364,7 +364,7 @@ Important domains:
 - Kernel crash dump metadata.
 - Recent crash records.
 
-V1 policy:
+Collection policy:
 
 - Capture metadata and bounded records first.
 - Do not copy large core or vmcore payloads by default.
@@ -387,7 +387,7 @@ Important domains:
 - RDMA and InfiniBand.
 - Sensors, thermal, and power.
 
-V1 policy:
+Collection policy:
 
 - Prefer Linux-exposed runtime state under `/sys` and native kernel interfaces.
 - Do not invoke vendor CLI tools.
@@ -411,7 +411,7 @@ Important domains:
 - Container cgroups.
 - Container events and bounded logs.
 
-V1 policy:
+Collection policy:
 
 - Detect runtime sockets.
 - Use native socket protocols when implemented.

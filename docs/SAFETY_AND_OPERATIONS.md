@@ -36,7 +36,7 @@ The implementation should prefer safe standard-library and safe crate APIs. If a
 needed Linux interface has no safe Rust abstraction, the project should first
 consider:
 
-1. Whether the interface belongs in v1.
+1. Whether the interface belongs in the initial release.
 2. Whether a small audited safe crate already exists.
 3. Whether the feature can be represented as unsupported until a safe design is
    available.
