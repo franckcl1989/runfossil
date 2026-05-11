@@ -46,23 +46,30 @@ fn run() -> Result<(), CliError> {
         Some("pack") => {
             let snapshot_dir = required_arg(&mut args, "snapshot-dir")?;
             ensure_no_extra_arg(&mut args)?;
-            Err(CliError::NotYetImplemented {
-                command: "pack",
-                detail: snapshot_dir,
-            })
+            run_pack(Path::new(&snapshot_dir))
         }
         Some("inspect") => {
             let snapshot_dir = required_arg(&mut args, "snapshot-dir")?;
             ensure_no_extra_arg(&mut args)?;
-            Err(CliError::NotYetImplemented {
-                command: "inspect",
-                detail: snapshot_dir,
-            })
+            run_inspect(Path::new(&snapshot_dir))
         }
         Some(other) => Err(CliError::UnknownCommand {
             command: other.to_string(),
         }),
     }
+}
+
+fn run_pack(snapshot_dir: &Path) -> Result<(), CliError> {
+    let metadata = runfossil_pack::pack_snapshot(snapshot_dir).map_err(CliError::Pack)?;
+    runfossil_pack::write_archive_metadata(&metadata).map_err(CliError::Pack)?;
+    println!("{}", metadata.archive_path.display());
+    Ok(())
+}
+
+fn run_inspect(snapshot_dir: &Path) -> Result<(), CliError> {
+    let report = runfossil_pack::inspect_snapshot(snapshot_dir).map_err(CliError::Inspector)?;
+    print!("{report}");
+    Ok(())
 }
 
 fn run_capture() -> Result<(), CliError> {
@@ -203,10 +210,6 @@ enum CliError {
     MissingArgument {
         name: &'static str,
     },
-    NotYetImplemented {
-        command: &'static str,
-        detail: String,
-    },
     NotRoot {
         effective_uid: EffectiveUid,
     },
@@ -221,6 +224,8 @@ enum CliError {
         source: std::io::Error,
     },
     Store(StoreError),
+    Pack(std::io::Error),
+    Inspector(runfossil_pack::InspectionError),
 }
 
 impl CliError {
@@ -234,9 +239,8 @@ impl CliError {
             | Self::UnexpectedArgument { .. }
             | Self::MissingArgument { .. } => 64,
             Self::NotRoot { .. } => 77,
-            Self::NotYetImplemented { .. } => 69,
             Self::MissingEffectiveUid | Self::ParseUid { .. } | Self::ClockBeforeEpoch => 70,
-            Self::Io { .. } | Self::Store(_) => 74,
+            Self::Io { .. } | Self::Store(_) | Self::Pack(_) | Self::Inspector(_) => 74,
         }
     }
 }
@@ -252,12 +256,6 @@ impl fmt::Display for CliError {
             }
             Self::MissingArgument { name } => {
                 write!(formatter, "missing argument <{name}>\n{HELP}")
-            }
-            Self::NotYetImplemented { command, detail } => {
-                write!(
-                    formatter,
-                    "'{command}' is not implemented yet for '{detail}'"
-                )
             }
             Self::NotRoot { effective_uid } => {
                 write!(
@@ -277,6 +275,8 @@ impl fmt::Display for CliError {
             Self::ClockBeforeEpoch => formatter.write_str("system clock is before the Unix epoch"),
             Self::Io { context, source } => write!(formatter, "{context}: {source}"),
             Self::Store(source) => write!(formatter, "{source}"),
+            Self::Pack(source) => write!(formatter, "packaging error: {source}"),
+            Self::Inspector(source) => write!(formatter, "{source}"),
         }
     }
 }
@@ -287,10 +287,11 @@ impl std::error::Error for CliError {
             Self::ParseUid { source, .. } => Some(source),
             Self::Io { source, .. } => Some(source),
             Self::Store(source) => Some(source),
+            Self::Pack(source) => Some(source),
+            Self::Inspector(source) => Some(source),
             Self::UnknownCommand { .. }
             | Self::UnexpectedArgument { .. }
             | Self::MissingArgument { .. }
-            | Self::NotYetImplemented { .. }
             | Self::NotRoot { .. }
             | Self::MissingEffectiveUid
             | Self::ClockBeforeEpoch => None,

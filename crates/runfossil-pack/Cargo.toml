@@ -9,6 +9,9 @@ repository.workspace = true
 [dependencies]
 runfossil-core = { path = "../runfossil-core" }
 runfossil-store = { path = "../runfossil-store" }
+sha2 = "0.10"
+tar = "0.4"
+zstd = { version = "0.13", default-features = false }
 
 [lints]
 workspace = true

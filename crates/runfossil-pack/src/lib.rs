@@ -1,7 +1,13 @@
 #![forbid(unsafe_code)]
-#![doc = "Post-capture packaging skeleton for runfossil."]
+#![doc = "Post-capture packaging and inspection for runfossil."]
 
-/// Default archive extension for future packaged snapshots.
+pub mod inspect;
+pub mod pack;
+
+pub use inspect::{InspectionError, InspectionReport, inspect_snapshot};
+pub use pack::{ArchiveMetadata, pack_snapshot, write_archive_metadata};
+
+/// Default archive extension for packaged snapshots.
 pub const DEFAULT_ARCHIVE_EXTENSION: &str = ".tar.zst";
 
 /// Returns whether packaging should run after capture.
