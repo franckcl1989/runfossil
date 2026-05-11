@@ -27,6 +27,10 @@ Deliverables:
 - Capture planning strategy.
 - Source Taxonomy.
 - Coverage Decision Matrix.
+- Requirements Traceability Matrix.
+- Glossary.
+- Risk Register.
+- Design Review Checklist.
 - Safety and Operations policy.
 - Implementation plan.
 

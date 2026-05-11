@@ -30,6 +30,10 @@ on the production host.
 - [Source Taxonomy](docs/SOURCE_TAXONOMY.md)
 - [Coverage Decision Matrix](docs/COVERAGE_DECISION_MATRIX.md)
 - [Safety and Operations](docs/SAFETY_AND_OPERATIONS.md)
+- [Requirements Traceability](docs/REQUIREMENTS_TRACEABILITY.md)
+- [Glossary](docs/GLOSSARY.md)
+- [Risk Register](docs/RISK_REGISTER.md)
+- [Design Review Checklist](docs/DESIGN_REVIEW_CHECKLIST.md)
 - [Architectural Decision Record](docs/ARCHITECTURAL_DECISION_RECORD.md)
 - [Implementation Plan](docs/IMPLEMENTATION_PLAN.md)
 
