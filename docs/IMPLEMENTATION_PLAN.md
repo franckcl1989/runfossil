@@ -6,6 +6,7 @@ The project should evolve by preserving stable contracts first:
 
 - Snapshot directory format.
 - Manifest status vocabulary.
+- Source coverage decision matrix.
 - Planner decision records.
 - Safe project-owned Rust code.
 - Root-only capture.
@@ -25,6 +26,7 @@ Deliverables:
 - Snapshot specification.
 - Capture planning strategy.
 - Source Taxonomy.
+- Coverage Decision Matrix.
 - Safety and Operations policy.
 - Implementation plan.
 

@@ -28,6 +28,7 @@ on the production host.
 - [Snapshot Specification](docs/SNAPSHOT_SPECIFICATION.md)
 - [Capture Planning Strategy](docs/CAPTURE_PLANNING_STRATEGY.md)
 - [Source Taxonomy](docs/SOURCE_TAXONOMY.md)
+- [Coverage Decision Matrix](docs/COVERAGE_DECISION_MATRIX.md)
 - [Safety and Operations](docs/SAFETY_AND_OPERATIONS.md)
 - [Architectural Decision Record](docs/ARCHITECTURAL_DECISION_RECORD.md)
 - [Implementation Plan](docs/IMPLEMENTATION_PLAN.md)

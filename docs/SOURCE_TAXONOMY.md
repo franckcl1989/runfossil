@@ -421,9 +421,11 @@ Collection policy:
 
 ## Implementation Relationship
 
-This taxonomy defines source ownership and collection boundaries. Implementation
-order is maintained in the [Implementation Plan](IMPLEMENTATION_PLAN.md) so the
-project has one authoritative delivery plan.
+This taxonomy defines source ownership and collection boundaries. Per-source
+collection decisions are maintained in the
+[Coverage Decision Matrix](COVERAGE_DECISION_MATRIX.md). Implementation order is
+maintained in the [Implementation Plan](IMPLEMENTATION_PLAN.md) so the project
+has one authoritative delivery plan.
 
 Every implementation milestone should preserve the same snapshot specification
 and manifest vocabulary.
