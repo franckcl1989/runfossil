@@ -77,7 +77,6 @@ fn run_capture() -> Result<(), CliError> {
     let snapshot_dir = env::current_dir()
         .map_err(|source| CliError::io("read current directory", source))?
         .join(snapshot_name);
-    let finished_at_unix_ns = unix_time_ns()?;
 
     let metadata = SnapshotMetadata {
         tool_version: env!("CARGO_PKG_VERSION").to_string(),
@@ -87,6 +86,11 @@ fn run_capture() -> Result<(), CliError> {
     };
 
     let mut store = SnapshotStore::create(&snapshot_dir, metadata).map_err(CliError::Store)?;
+
+    runfossil_proc::collect_proc(&mut store).map_err(CliError::Store)?;
+    runfossil_proc::collect_sys(&mut store).map_err(CliError::Store)?;
+
+    let finished_at_unix_ns = unix_time_ns()?;
     store
         .finalize(&finished_at_unix_ns.to_string())
         .map_err(CliError::Store)?;

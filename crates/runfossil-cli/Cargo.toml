@@ -14,6 +14,7 @@ path = "src/main.rs"
 runfossil-core = { path = "../runfossil-core" }
 runfossil-pack = { path = "../runfossil-pack" }
 runfossil-plan = { path = "../runfossil-plan" }
+runfossil-proc = { path = "../runfossil-proc" }
 runfossil-store = { path = "../runfossil-store" }
 
 [lints]
