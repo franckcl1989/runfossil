@@ -87,6 +87,12 @@ fn run_capture() -> Result<(), CliError> {
 
     let mut store = SnapshotStore::create(&snapshot_dir, metadata).map_err(CliError::Store)?;
 
+    let probe = runfossil_plan::probe_host();
+    let plan = runfossil_plan::build_plan(probe);
+    store
+        .write_raw_file(Path::new("plan.json"), plan.to_json().as_bytes())
+        .map_err(CliError::Store)?;
+
     runfossil_proc::collect_proc(&mut store).map_err(CliError::Store)?;
     runfossil_proc::collect_sys(&mut store).map_err(CliError::Store)?;
 

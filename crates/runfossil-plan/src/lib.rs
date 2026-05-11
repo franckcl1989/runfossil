@@ -1,9 +1,16 @@
 #![forbid(unsafe_code)]
-#![doc = "Planner model skeleton for runfossil."]
+#![doc = "Adaptive capture planner for runfossil."]
 
 use std::fmt;
 
 use runfossil_core::{CoverageDecision, PlanDecision, Priority, SourceSlug};
+
+mod builder;
+mod probe;
+mod registry;
+
+pub use builder::build_plan;
+pub use probe::probe_host;
 
 /// Planner risk level for a candidate capture task.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -113,7 +120,7 @@ impl PressureLevels {
 }
 
 /// Pressure level detected from PSI or other host signals.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Ord, PartialOrd)]
 pub enum Pressure {
     /// Low pressure.
     #[default]
@@ -235,6 +242,140 @@ impl CapturePlan {
     pub fn tasks(&self) -> &[PlannedTask] {
         &self.tasks
     }
+
+    /// Serializes the plan to a JSON string.
+    pub fn to_json(&self) -> String {
+        let mut buf = String::with_capacity(32_768);
+        buf.push_str("{\n");
+        buf.push_str(r#"  "planner": ""#);
+        json_escape(&self.planner, &mut buf);
+        buf.push_str("\",\n");
+
+        buf.push_str(r#"  "probes": {"root": "#);
+        buf.push_str(&format!("{}", self.probes.root));
+        buf.push_str(&format!(
+            r#", "cgroup_version": {}"#,
+            json_optional_str(&self.probes.cgroup_version)
+        ));
+        buf.push_str(&format!(
+            r#", "systemd_detected": {}"#,
+            self.probes.systemd_detected
+        ));
+        buf.push_str(r#", "container_runtime_sockets": ["#);
+        for (i, socket) in self.probes.container_runtime_sockets.iter().enumerate() {
+            if i > 0 {
+                buf.push_str(", ");
+            }
+            buf.push('"');
+            json_escape(socket, &mut buf);
+            buf.push('"');
+        }
+        buf.push_str("]},\n");
+
+        buf.push_str(r#"  "pressure": {"#);
+        buf.push_str(&format!(r#""cpu": "{}""#, self.pressure.cpu.as_str()));
+        buf.push_str(&format!(
+            r#", "memory": "{}""#,
+            self.pressure.memory.as_str()
+        ));
+        buf.push_str(&format!(r#", "io": "{}""#, self.pressure.io.as_str()));
+        buf.push_str("},\n");
+
+        buf.push_str(r#"  "tasks": ["#);
+        if self.tasks.is_empty() {
+            buf.push(']');
+        } else {
+            buf.push('\n');
+            for (i, task) in self.tasks.iter().enumerate() {
+                buf.push_str("    {\n");
+                buf.push_str(&format!(
+                    r#"      "id": "{}""#,
+                    json_escape_inline(&task.id)
+                ));
+                buf.push_str(&format!(r#", "source": "{}""#, task.source.as_str()));
+                buf.push_str(&format!(
+                    r#", "domain": "{}""#,
+                    json_escape_inline(&task.domain)
+                ));
+                buf.push_str(&format!(
+                    r#", "object": "{}""#,
+                    json_escape_inline(&task.object)
+                ));
+                buf.push_str(&format!(
+                    r#", "coverage_decision": "{}""#,
+                    task.coverage_decision.as_str()
+                ));
+                buf.push_str(&format!(r#", "decision": "{}""#, task.decision.as_str()));
+                buf.push_str(&format!(r#", "priority": "{}""#, task.priority.as_str()));
+                buf.push_str(&format!(r#", "risk": "{}""#, task.risk.as_str()));
+                buf.push_str(&format!(
+                    r#", "reason": "{}""#,
+                    json_escape_inline(&task.reason)
+                ));
+                buf.push_str(&format!(
+                    r#", "limits": {{"max_bytes": {}, "timeout_ms": {}, "max_files": {}, "max_depth": {}}}"#,
+                    task.limits.max_bytes,
+                    task.limits.timeout_ms,
+                    task.limits.max_files,
+                    task.limits.max_depth,
+                ));
+                buf.push_str(r#", "dependencies": ["#);
+                for (j, dep) in task.dependencies.iter().enumerate() {
+                    if j > 0 {
+                        buf.push_str(", ");
+                    }
+                    buf.push('"');
+                    json_escape(dep, &mut buf);
+                    buf.push('"');
+                }
+                buf.push(']');
+
+                if i + 1 < self.tasks.len() {
+                    buf.push_str("\n    },\n");
+                } else {
+                    buf.push_str("\n    }\n");
+                }
+            }
+            buf.push_str("  ]");
+        }
+
+        buf.push_str("\n}\n");
+        buf
+    }
+}
+
+fn json_optional_str(value: &Option<String>) -> String {
+    match value {
+        Some(s) => format!("\"{}\"", native(s)),
+        None => "null".to_string(),
+    }
+}
+
+#[allow(clippy::needless_pass_by_value)]
+fn native<T: ToString>(value: T) -> String {
+    value.to_string()
+}
+
+fn json_escape_inline(value: &str) -> String {
+    let mut buf = String::new();
+    json_escape(value, &mut buf);
+    buf
+}
+
+fn json_escape(src: &str, buf: &mut String) {
+    for ch in src.chars() {
+        match ch {
+            '"' => buf.push_str("\\\""),
+            '\\' => buf.push_str("\\\\"),
+            '\n' => buf.push_str("\\n"),
+            '\r' => buf.push_str("\\r"),
+            '\t' => buf.push_str("\\t"),
+            c if c.is_control() => {
+                buf.push_str(&format!("\\u{:04x}", c as u32));
+            }
+            c => buf.push(c),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -245,5 +386,54 @@ mod tests {
     fn empty_plan_has_no_tasks() {
         let plan = CapturePlan::empty();
         assert!(plan.tasks().is_empty());
+    }
+
+    #[test]
+    fn empty_plan_to_json_has_planner_field() {
+        let plan = CapturePlan::empty();
+        let json = plan.to_json();
+        assert!(json.contains(r#""planner""#));
+    }
+
+    #[test]
+    fn plan_with_tasks_to_json_has_tasks_array() {
+        let mut plan = CapturePlan::empty();
+        plan.push(PlannedTask {
+            id: "test.task".to_string(),
+            source: SourceSlug::Proc,
+            domain: "test".to_string(),
+            object: "test".to_string(),
+            coverage_decision: CoverageDecision::Collect,
+            decision: PlanDecision::Scheduled,
+            priority: Priority::P0,
+            risk: RiskLevel::Low,
+            reason: "test reason".to_string(),
+            limits: TaskLimits::new(4096, 1000, 0, 0),
+            dependencies: vec![],
+        });
+        let json = plan.to_json();
+        assert!(json.contains(r#""tasks""#));
+        assert!(json.contains(r#""test.task""#));
+    }
+
+    #[test]
+    fn to_json_escapes_control_characters() {
+        let mut plan = CapturePlan::empty();
+        plan.push(PlannedTask {
+            id: "test.esc".to_string(),
+            source: SourceSlug::Proc,
+            domain: "dom".to_string(),
+            object: "obj\"quote".to_string(),
+            coverage_decision: CoverageDecision::Collect,
+            decision: PlanDecision::Scheduled,
+            priority: Priority::P0,
+            risk: RiskLevel::Low,
+            reason: "reason\nnewline".to_string(),
+            limits: TaskLimits::new(0, 0, 0, 0),
+            dependencies: vec![],
+        });
+        let json = plan.to_json();
+        assert!(json.contains(r#"\"quote"#));
+        assert!(json.contains("\\nnewline"));
     }
 }

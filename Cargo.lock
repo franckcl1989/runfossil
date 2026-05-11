@@ -227,6 +227,8 @@ name = "runfossil-plan"
 version = "0.1.0"
 dependencies = [
  "runfossil-core",
+ "runfossil-fs",
+ "tempfile",
 ]
 
 [[package]]
