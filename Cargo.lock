@@ -185,6 +185,7 @@ dependencies = [
  "runfossil-pack",
  "runfossil-plan",
  "runfossil-proc",
+ "runfossil-service",
  "runfossil-store",
 ]
 
@@ -249,6 +250,8 @@ name = "runfossil-service"
 version = "0.1.0"
 dependencies = [
  "runfossil-core",
+ "runfossil-fs",
+ "runfossil-store",
 ]
 
 [[package]]

@@ -8,6 +8,8 @@ repository.workspace = true
 
 [dependencies]
 runfossil-core = { path = "../runfossil-core" }
+runfossil-fs = { path = "../runfossil-fs" }
+runfossil-store = { path = "../runfossil-store" }
 
 [lints]
 workspace = true

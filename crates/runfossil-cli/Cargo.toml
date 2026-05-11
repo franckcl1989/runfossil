@@ -16,6 +16,7 @@ runfossil-net = { path = "../runfossil-net" }
 runfossil-pack = { path = "../runfossil-pack" }
 runfossil-plan = { path = "../runfossil-plan" }
 runfossil-proc = { path = "../runfossil-proc" }
+runfossil-service = { path = "../runfossil-service" }
 runfossil-store = { path = "../runfossil-store" }
 
 [lints]
