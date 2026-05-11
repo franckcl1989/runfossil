@@ -134,7 +134,9 @@ fn source_present(unit: &CoverageUnit, probe: &HostProbe) -> bool {
         SourceSlug::Kernel => true,
         SourceSlug::Netlink => probe.root,
         SourceSlug::Service => probe.systemd_detected,
-        SourceSlug::Container => !probe.container_runtime_sockets.is_empty(),
+        SourceSlug::Container => {
+            !probe.container_runtime_sockets.is_empty() || container_evidence_present()
+        }
         SourceSlug::Logs => probe.systemd_detected,
         SourceSlug::Sessions => probe.systemd_detected,
         SourceSlug::Time => true,
@@ -169,6 +171,10 @@ fn conditions_met(unit: &CoverageUnit, probe: &HostProbe) -> bool {
         "sys.firmware" | "sys.securityfs" | "sys.class_drm" => probe.root,
         "run.systemd" => probe.systemd_detected,
         "security.selinux" => probe.root,
+        "container.process"
+        | "container.resources"
+        | "container.namespace"
+        | "container.cgroup" => probe.root && container_evidence_present(),
         _ => true,
     }
 }
@@ -182,6 +188,16 @@ fn worst_pressure(pressure: PressureLevels) -> Pressure {
         worst = pressure.io;
     }
     worst
+}
+
+fn container_evidence_present() -> bool {
+    use std::path::Path;
+
+    Path::new("/run/runc").is_dir()
+        || Path::new("/run/docker").is_dir()
+        || Path::new("/run/containerd").is_dir()
+        || Path::new("/run/crio").is_dir()
+        || Path::new("/sys/fs/cgroup/system.slice").is_dir()
 }
 
 fn build_reason(
@@ -428,6 +444,7 @@ mod tests {
     fn container_source_not_present_without_sockets() {
         let mut probe = small_probe();
         probe.container_runtime_sockets = Vec::new();
+        probe.root = false;
         let plan = build_plan(probe);
         let container_tasks: Vec<&PlannedTask> = plan
             .tasks()
@@ -435,7 +452,16 @@ mod tests {
             .filter(|t| t.source == SourceSlug::Container)
             .collect();
         for task in container_tasks {
-            assert_eq!(task.decision, PlanDecision::NotPresent);
+            let expected = if task.coverage_decision == CoverageDecision::DeferredNative {
+                PlanDecision::Unsupported
+            } else {
+                PlanDecision::SkippedByPolicy
+            };
+            assert_eq!(
+                task.decision, expected,
+                "container task {} expected {:?} but got {:?}",
+                task.id, expected, task.decision
+            );
         }
     }
 }

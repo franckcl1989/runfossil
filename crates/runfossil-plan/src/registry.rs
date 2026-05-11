@@ -824,6 +824,50 @@ pub(crate) fn coverage_registry() -> Vec<CoverageUnit> {
     ));
 
     units.push(CoverageUnit::new(
+        "container.process",
+        SourceSlug::Container,
+        "process",
+        "process",
+        CoverageDecision::Conditional,
+        Priority::P3,
+        ObjectKind::FileSet,
+        true,
+    ));
+
+    units.push(CoverageUnit::new(
+        "container.resources",
+        SourceSlug::Container,
+        "resources",
+        "resources",
+        CoverageDecision::Conditional,
+        Priority::P3,
+        ObjectKind::BoundedTree,
+        true,
+    ));
+
+    units.push(CoverageUnit::new(
+        "container.namespace",
+        SourceSlug::Container,
+        "namespace",
+        "namespace",
+        CoverageDecision::Conditional,
+        Priority::P3,
+        ObjectKind::Symlink,
+        true,
+    ));
+
+    units.push(CoverageUnit::new(
+        "container.cgroup",
+        SourceSlug::Container,
+        "cgroup",
+        "cgroup",
+        CoverageDecision::Conditional,
+        Priority::P3,
+        ObjectKind::BoundedTree,
+        true,
+    ));
+
+    units.push(CoverageUnit::new(
         "logs.system_events",
         SourceSlug::Logs,
         "system_events",

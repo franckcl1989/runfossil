@@ -180,6 +180,7 @@ checksum = "f8dcc9c7d52a811697d2151c701e0d08956f92b0e24136cf4cf27b57a6a0d9bf"
 name = "runfossil-cli"
 version = "0.1.0"
 dependencies = [
+ "runfossil-container",
  "runfossil-core",
  "runfossil-net",
  "runfossil-pack",
@@ -195,6 +196,7 @@ version = "0.1.0"
 dependencies = [
  "runfossil-core",
  "runfossil-fs",
+ "runfossil-store",
 ]
 
 [[package]]
