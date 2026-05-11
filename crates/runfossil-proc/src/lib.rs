@@ -1,6 +1,8 @@
 #![forbid(unsafe_code)]
 #![doc = "Procfs and sysfs collectors for runfossil. Reads /proc and /sys runtime evidence without external commands."]
 
+pub(crate) mod dev;
+pub(crate) mod kmsg;
 pub(crate) mod sys;
 
 use std::path::{Path, PathBuf};
@@ -232,6 +234,10 @@ fn p2_limited_targets() -> Vec<ProcTarget> {
         ObjectKind::File,
     );
 
+    net_target(&mut targets, "dev_mcast");
+    net_target(&mut targets, "igmp");
+    net_target(&mut targets, "igmp6");
+
     targets
 }
 
@@ -345,6 +351,80 @@ pub fn collect_proc(store: &mut SnapshotStore) -> Result<(), StoreError> {
     collect_p0_globals(store)?;
     collect_p2_limited(store)?;
     collect_p1_processes(store)?;
+    collect_p3_netfilter(store)?;
+    Ok(())
+}
+
+fn collect_p3_netfilter(store: &mut SnapshotStore) -> Result<(), StoreError> {
+    let netfilter_dir = Path::new("/proc/net/netfilter");
+    if !netfilter_dir.exists() {
+        return Ok(());
+    }
+
+    let limits = BoundedTraversalLimits::new(64, 1, 200);
+    let read_limits = BoundedReadLimits::new(65_536, 200);
+
+    let listing = match list_dir_entries(netfilter_dir, limits) {
+        Ok(listing) => listing,
+        Err(error) => {
+            let status = fs_error_to_manifest_status(&error);
+            let entry = ManifestEntry::new(
+                "proc.net.netfilter.status",
+                SourceSlug::Proc,
+                "net",
+                "netfilter/status",
+                ObjectKind::Metadata,
+                status,
+            )
+            .with_reason(error.to_string())
+            .with_limits(ObjectLimits::new(0, limits.timeout_ms, 1, 0));
+
+            store.record_object(entry)?;
+            return Ok(());
+        }
+    };
+
+    for entry in &listing.entries {
+        if entry.is_dir {
+            continue;
+        }
+
+        let source_path = netfilter_dir.join(&entry.name);
+        match read_file_bounded(&source_path, read_limits) {
+            Ok(result) => {
+                let out_path = output_path(&source_path);
+                let bytes = result.content.len() as u64;
+                store.write_raw_file(&out_path, &result.content)?;
+
+                let status = if result.was_truncated {
+                    ManifestStatus::Truncated
+                } else {
+                    ManifestStatus::Captured
+                };
+
+                let manifest_entry = ManifestEntry::new(
+                    format!("proc.net.netfilter.{}", entry.name),
+                    SourceSlug::Proc,
+                    "net",
+                    format!("netfilter/{}", entry.name),
+                    ObjectKind::File,
+                    status,
+                )
+                .with_path(out_path.to_string_lossy())
+                .with_bytes(bytes)
+                .with_limits(ObjectLimits::new(
+                    read_limits.max_bytes,
+                    read_limits.timeout_ms,
+                    1,
+                    0,
+                ));
+
+                store.record_object(manifest_entry)?;
+            }
+            Err(_error) => {}
+        }
+    }
+
     Ok(())
 }
 
@@ -354,6 +434,24 @@ pub fn collect_proc(store: &mut SnapshotStore) -> Result<(), StoreError> {
 /// network class devices, and block device attributes.
 pub fn collect_sys(store: &mut SnapshotStore) -> Result<(), StoreError> {
     sys::collect_sys(store)
+}
+
+/// Collects `/dev` metadata and symlink-target evidence.
+///
+/// Device nodes are metadata-only. Symlink directories (/dev/block,
+/// /dev/disk, /dev/mapper) record target paths. Pseudo-devices and
+/// loop devices are recorded as metadata.
+pub fn collect_dev(store: &mut SnapshotStore) -> Result<(), StoreError> {
+    dev::collect_dev(store)
+}
+
+/// Collects a bounded window from the kernel ring buffer via `/dev/kmsg`.
+///
+/// Reads up to 2 MiB from the kernel message buffer and writes it to
+/// `raw/kernel/kmsg.window`. Records `not_found` if `/dev/kmsg` is
+/// absent.
+pub fn collect_kmsg(store: &mut SnapshotStore) -> Result<(), StoreError> {
+    kmsg::collect_kmsg(store)
 }
 
 pub(crate) fn now_ns() -> String {

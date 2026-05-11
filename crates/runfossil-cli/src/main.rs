@@ -95,6 +95,9 @@ fn run_capture() -> Result<(), CliError> {
 
     runfossil_proc::collect_proc(&mut store).map_err(CliError::Store)?;
     runfossil_proc::collect_sys(&mut store).map_err(CliError::Store)?;
+    runfossil_proc::collect_dev(&mut store).map_err(CliError::Store)?;
+    runfossil_proc::collect_kmsg(&mut store).map_err(CliError::Store)?;
+    runfossil_net::collect_netlink(&mut store).map_err(CliError::Store)?;
 
     let finished_at_unix_ns = unix_time_ns()?;
     store
