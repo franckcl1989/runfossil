@@ -28,116 +28,6 @@ pub const fn source() -> SourceSlug {
     SourceSlug::Proc
 }
 
-/// P1 per-process files. These are the stable per-process attributes
-/// that almost all Linux kernels expose. They are collected via
-/// auto-discovery from each `/proc/<pid>/` directory in addition to
-/// anything else found there (excluding the blacklist).
-struct ProcPerProcess {
-    name: &'static str,
-    relative: &'static str,
-    kind: ObjectKind,
-}
-
-fn p1_process_targets() -> Vec<ProcPerProcess> {
-    vec![
-        ProcPerProcess {
-            name: "status",
-            relative: "status",
-            kind: ObjectKind::File,
-        },
-        ProcPerProcess {
-            name: "stat",
-            relative: "stat",
-            kind: ObjectKind::File,
-        },
-        ProcPerProcess {
-            name: "statm",
-            relative: "statm",
-            kind: ObjectKind::File,
-        },
-        ProcPerProcess {
-            name: "cmdline",
-            relative: "cmdline",
-            kind: ObjectKind::File,
-        },
-        ProcPerProcess {
-            name: "comm",
-            relative: "comm",
-            kind: ObjectKind::File,
-        },
-        ProcPerProcess {
-            name: "limits",
-            relative: "limits",
-            kind: ObjectKind::File,
-        },
-        ProcPerProcess {
-            name: "io",
-            relative: "io",
-            kind: ObjectKind::File,
-        },
-        ProcPerProcess {
-            name: "sched",
-            relative: "sched",
-            kind: ObjectKind::File,
-        },
-        ProcPerProcess {
-            name: "cgroup",
-            relative: "cgroup",
-            kind: ObjectKind::File,
-        },
-        ProcPerProcess {
-            name: "oom_score",
-            relative: "oom_score",
-            kind: ObjectKind::File,
-        },
-        ProcPerProcess {
-            name: "oom_score_adj",
-            relative: "oom_score_adj",
-            kind: ObjectKind::File,
-        },
-        ProcPerProcess {
-            name: "cwd",
-            relative: "cwd",
-            kind: ObjectKind::Symlink,
-        },
-        ProcPerProcess {
-            name: "root",
-            relative: "root",
-            kind: ObjectKind::Symlink,
-        },
-        ProcPerProcess {
-            name: "exe",
-            relative: "exe",
-            kind: ObjectKind::Symlink,
-        },
-        ProcPerProcess {
-            name: "environ",
-            relative: "environ",
-            kind: ObjectKind::File,
-        },
-        ProcPerProcess {
-            name: "maps",
-            relative: "maps",
-            kind: ObjectKind::File,
-        },
-        ProcPerProcess {
-            name: "smaps_rollup",
-            relative: "smaps_rollup",
-            kind: ObjectKind::File,
-        },
-        ProcPerProcess {
-            name: "stack",
-            relative: "stack",
-            kind: ObjectKind::File,
-        },
-        ProcPerProcess {
-            name: "wchan",
-            relative: "wchan",
-            kind: ObjectKind::File,
-        },
-    ]
-}
-
 /// Collects all /proc evidence into the given store.
 ///
 /// Uses auto-discovery: scans `/proc` root for global files, `/proc/net` for
@@ -280,7 +170,7 @@ fn collect_proc_net_auto(store: &mut SnapshotStore) -> Result<(), StoreError> {
     }
 
     let config = AutoDiscoverConfig::proc_net();
-    let limits = BoundedTraversalLimits::new(config.max_files_per_level, 1, config.timeout_ms);
+    let limits = BoundedTraversalLimits::new(config.max_files_per_level, 0, config.timeout_ms);
     let read_limits = BoundedReadLimits::new(config.max_bytes_per_file, config.timeout_ms);
 
     let listing = match list_dir_entries(net_dir, limits) {
@@ -288,49 +178,59 @@ fn collect_proc_net_auto(store: &mut SnapshotStore) -> Result<(), StoreError> {
         Err(_) => return Ok(()),
     };
 
+    let mut captured = 0u64;
+
     for entry in &listing.entries {
+        if captured >= config.max_files_per_level {
+            break;
+        }
         if entry.is_dir {
-            // Handle subdirectories like netfilter, mptcp_net, sctp, etc.
+            // Handle subdirectories with strict single-level scan
             let sub_dir = net_dir.join(&entry.name);
-            if let Ok(sub_listing) = list_dir_entries(&sub_dir, limits) {
+            let sub_limits = BoundedTraversalLimits::new(32, 0, 200);
+            if let Ok(sub_listing) = list_dir_entries(&sub_dir, sub_limits) {
                 for sub_entry in &sub_listing.entries {
-                    if sub_entry.is_dir {
+                    if sub_entry.is_dir || captured >= config.max_files_per_level {
                         continue;
                     }
-                    collect_single_file(
+                    if let Ok(_result) = store_write_captured_file(
                         store,
                         &sub_dir.join(&sub_entry.name),
                         SourceSlug::Proc,
                         "net",
                         &format!("{}/{}", entry.name, sub_entry.name),
                         read_limits,
-                    )?;
+                    ) {
+                        captured += 1;
+                    }
                 }
             }
             continue;
         }
 
-        collect_single_file(
+        if let Ok(_bytes) = store_write_captured_file(
             store,
             &net_dir.join(&entry.name),
             SourceSlug::Proc,
             "net",
             &entry.name,
             read_limits,
-        )?;
+        ) {
+            captured += 1;
+        }
     }
 
     Ok(())
 }
 
-fn collect_single_file(
+fn store_write_captured_file(
     store: &mut SnapshotStore,
     source_path: &Path,
     source: SourceSlug,
     domain: &str,
     object_name: &str,
     limits: BoundedReadLimits,
-) -> Result<(), StoreError> {
+) -> Result<u64, StoreError> {
     match read_file_bounded(source_path, limits) {
         Ok(result) => {
             let out_path = output_path(source_path);
@@ -370,6 +270,7 @@ fn collect_single_file(
             }
 
             store.record_object(entry)?;
+            Ok(bytes)
         }
         Err(error) => {
             let status = fs_error_to_manifest_status(&error);
@@ -385,10 +286,9 @@ fn collect_single_file(
             .with_limits(ObjectLimits::new(limits.max_bytes, limits.timeout_ms, 1, 0));
 
             store.record_object(entry)?;
+            Ok(0)
         }
     }
-
-    Ok(())
 }
 
 /// Collects sysctl-like files from /proc/sys/kernel, /proc/sys/vm,
@@ -595,10 +495,10 @@ fn collect_p1_processes(store: &mut SnapshotStore) -> Result<(), StoreError> {
         }
     };
 
-    let per_process = p1_process_targets();
-    let file_limits = BoundedReadLimits::per_process();
     let fds_limits = BoundedTraversalLimits::new(1024, 1, 200);
     let ns_limits = BoundedTraversalLimits::new(32, 1, 100);
+    let per_process_config = AutoDiscoverConfig::proc_per_process();
+    let max_pids = 1024u32;
 
     for entry in &listing.entries {
         if !entry.is_dir {
@@ -608,8 +508,11 @@ fn collect_p1_processes(store: &mut SnapshotStore) -> Result<(), StoreError> {
             Ok(pid) => pid,
             Err(_) => continue,
         };
+        if pid > max_pids {
+            continue;
+        }
 
-        collect_process_files(store, pid, &per_process, file_limits)?;
+        collect_process_files_auto(store, pid, &per_process_config)?;
         collect_process_fds(store, pid, fds_limits)?;
         collect_process_ns(store, pid, ns_limits)?;
         collect_process_fdinfo(store, pid, fds_limits)?;
@@ -619,115 +522,118 @@ fn collect_p1_processes(store: &mut SnapshotStore) -> Result<(), StoreError> {
     Ok(())
 }
 
-fn collect_process_files(
+fn collect_process_files_auto(
     store: &mut SnapshotStore,
     pid: u32,
-    targets: &[ProcPerProcess],
-    limits: BoundedReadLimits,
+    config: &AutoDiscoverConfig,
 ) -> Result<(), StoreError> {
-    for t in targets {
-        let source_path = Path::new("/proc").join(pid.to_string()).join(t.relative);
+    let pid_dir = Path::new("/proc").join(pid.to_string());
+    let limits = BoundedTraversalLimits::new(config.max_files_per_level, 0, config.timeout_ms);
+    let read_limits = BoundedReadLimits::new(config.max_bytes_per_file, config.timeout_ms);
 
-        match t.kind {
-            ObjectKind::Symlink => match read_link_bounded(&source_path, limits) {
-                Ok(target_path) => {
-                    let out_path = output_path(&source_path);
-                    let content = target_path.to_string_lossy().into_owned();
-                    store.write_raw_file(&out_path, content.as_bytes())?;
+    let listing = match list_dir_entries(&pid_dir, limits) {
+        Ok(l) => l,
+        Err(_) => return Ok(()), // process exited during listing
+    };
 
-                    let entry = ManifestEntry::new(
-                        format!("proc.process.{pid}.{}", t.name),
-                        SourceSlug::Proc,
-                        "process",
-                        format!("{pid}/{}", t.name),
-                        t.kind,
-                        ManifestStatus::Captured,
-                    )
-                    .with_path(out_path.to_string_lossy())
-                    .with_bytes(content.len() as u64)
-                    .with_limits(ObjectLimits::new(
-                        limits.max_bytes,
-                        limits.timeout_ms,
-                        1,
-                        0,
+    for entry in &listing.entries {
+        if config.is_blacklisted(&entry.name) {
+            continue;
+        }
+
+        let source_path = pid_dir.join(&entry.name);
+
+        // Symlinks: resolve target and record
+        if entry.name == "cwd" || entry.name == "root" || entry.name == "exe" {
+            if let Ok(target_path) = read_link_bounded(&source_path, read_limits) {
+                let out_path = output_path(&source_path);
+                let content = target_path.to_string_lossy().into_owned();
+                if let Err(e) = store.write_raw_file(&out_path, content.as_bytes()) {
+                    let _ = store.log_error(&ErrorLogEntry::new(
+                        now_ns(),
+                        None::<String>,
+                        ManifestStatus::IoError,
+                        format!("write symlink {source_path:?}: {e}"),
                     ));
-
-                    store.record_object(entry)?;
+                    continue;
                 }
-                Err(error) => {
-                    let status = fs_error_to_manifest_status(&error);
-                    let entry = ManifestEntry::new(
-                        format!("proc.process.{pid}.{}", t.name),
-                        SourceSlug::Proc,
-                        "process",
-                        format!("{pid}/{}", t.name),
-                        t.kind,
-                        status,
-                    )
-                    .with_reason(error.to_string())
-                    .with_limits(ObjectLimits::new(
-                        limits.max_bytes,
-                        limits.timeout_ms,
-                        1,
-                        0,
-                    ));
+                let manifest_entry = ManifestEntry::new(
+                    format!("proc.process.{pid}.{name}", name = entry.name),
+                    SourceSlug::Proc,
+                    "process",
+                    format!("{pid}/{name}", name = entry.name),
+                    ObjectKind::Symlink,
+                    ManifestStatus::Captured,
+                )
+                .with_path(out_path.to_string_lossy())
+                .with_bytes(content.len() as u64)
+                .with_limits(ObjectLimits::new(
+                    read_limits.max_bytes,
+                    read_limits.timeout_ms,
+                    1,
+                    0,
+                ));
+                store.record_object(manifest_entry)?;
+            }
+            continue;
+        }
 
-                    store.record_object(entry)?;
-                }
-            },
-            _ => match read_file_bounded(&source_path, limits) {
-                Ok(result) => {
-                    let out_path = output_path(&source_path);
-                    let bytes = result.content.len() as u64;
+        if entry.is_dir {
+            continue;
+        }
 
-                    store.write_raw_file(&out_path, &result.content)?;
+        // Regular file: read bounded
+        match read_file_bounded(&source_path, read_limits) {
+            Ok(result) => {
+                let out_path = output_path(&source_path);
+                let bytes = result.content.len() as u64;
+                store.write_raw_file(&out_path, &result.content)?;
 
-                    let status = if result.was_truncated {
-                        ManifestStatus::Truncated
-                    } else {
-                        ManifestStatus::Captured
-                    };
+                let status = if result.was_truncated {
+                    ManifestStatus::Truncated
+                } else {
+                    ManifestStatus::Captured
+                };
 
-                    let entry = ManifestEntry::new(
-                        format!("proc.process.{pid}.{}", t.name),
-                        SourceSlug::Proc,
-                        "process",
-                        format!("{pid}/{}", t.name),
-                        t.kind,
-                        status,
-                    )
-                    .with_path(out_path.to_string_lossy())
-                    .with_bytes(bytes)
-                    .with_limits(ObjectLimits::new(
-                        limits.max_bytes,
-                        limits.timeout_ms,
-                        1,
-                        0,
-                    ));
+                let entry = ManifestEntry::new(
+                    format!("proc.process.{pid}.{name}", name = entry.name),
+                    SourceSlug::Proc,
+                    "process",
+                    format!("{pid}/{name}", name = entry.name),
+                    ObjectKind::File,
+                    status,
+                )
+                .with_path(out_path.to_string_lossy())
+                .with_bytes(bytes)
+                .with_limits(ObjectLimits::new(
+                    read_limits.max_bytes,
+                    read_limits.timeout_ms,
+                    1,
+                    0,
+                ));
 
-                    store.record_object(entry)?;
-                }
-                Err(error) => {
-                    let status = fs_error_to_manifest_status(&error);
-                    let entry = ManifestEntry::new(
-                        format!("proc.process.{pid}.{}", t.name),
-                        SourceSlug::Proc,
-                        "process",
-                        format!("{pid}/{}", t.name),
-                        t.kind,
-                        status,
-                    )
-                    .with_reason(error.to_string())
-                    .with_limits(ObjectLimits::new(
-                        limits.max_bytes,
-                        limits.timeout_ms,
-                        1,
-                        0,
-                    ));
+                store.record_object(entry)?;
+            }
+            Err(error) => {
+                let status = fs_error_to_manifest_status(&error);
+                let entry = ManifestEntry::new(
+                    format!("proc.process.{pid}.{name}", name = entry.name),
+                    SourceSlug::Proc,
+                    "process",
+                    format!("{pid}/{name}", name = entry.name),
+                    ObjectKind::File,
+                    status,
+                )
+                .with_reason(error.to_string())
+                .with_limits(ObjectLimits::new(
+                    read_limits.max_bytes,
+                    read_limits.timeout_ms,
+                    1,
+                    0,
+                ));
 
-                    store.record_object(entry)?;
-                }
-            },
+                store.record_object(entry)?;
+            }
         }
     }
 
@@ -1283,12 +1189,13 @@ mod tests {
     }
 
     #[test]
-    fn proc_targets_have_non_empty_ids() {
-        let targets = p1_process_targets();
-        for t in &targets {
-            assert!(!t.name.is_empty());
-            assert!(!t.relative.is_empty());
-        }
+    fn proc_auto_discover_blacklist() {
+        let config = AutoDiscoverConfig::proc_per_process();
+        assert!(config.is_blacklisted("mem"));
+        assert!(config.is_blacklisted("pagemap"));
+        assert!(config.is_blacklisted("clear_refs"));
+        assert!(!config.is_blacklisted("status"));
+        assert!(!config.is_blacklisted("cmdline"));
     }
 
     #[test]
@@ -1340,21 +1247,6 @@ mod tests {
             "timestamp should be in 2023+ range"
         );
         Ok(())
-    }
-
-    #[test]
-    fn p1_process_targets_are_counted() {
-        let targets = p1_process_targets();
-        assert_eq!(targets.len(), 19, "expected 19 per-process file targets");
-    }
-
-    #[test]
-    fn p1_process_targets_include_core_files() {
-        let targets = p1_process_targets();
-        let names: Vec<&str> = targets.iter().map(|t| t.name).collect();
-        assert!(names.contains(&"status"));
-        assert!(names.contains(&"cmdline"));
-        assert!(names.contains(&"maps"));
     }
 
     #[test]

@@ -4,7 +4,7 @@
 use std::path::Path;
 
 use runfossil_core::{ManifestStatus, ObjectKind, SourceSlug};
-use runfossil_fs::{BoundedReadLimits, BoundedTraversalLimits};
+use runfossil_fs::{AutoDiscoverConfig, BoundedReadLimits, BoundedTraversalLimits};
 use runfossil_fs::{list_dir_entries, read_file_bounded, read_link_bounded};
 use runfossil_store::{ManifestEntry, ObjectLimits, SnapshotStore, StoreError};
 
@@ -312,26 +312,7 @@ fn collect_class_net(store: &mut SnapshotStore) -> Result<(), StoreError> {
         return Ok(());
     }
 
-    collect_bounded_device_tree(
-        store,
-        net_dir,
-        "net",
-        &[
-            "mtu",
-            "flags",
-            "address",
-            "addr_len",
-            "type",
-            "operstate",
-            "speed",
-            "carrier",
-            "duplex",
-            "dev_port",
-        ],
-        1_048_576,
-        16,
-        2,
-    )
+    collect_bounded_device_tree(store, net_dir, "net", &[], 1_048_576, 16, 2)
 }
 
 fn collect_block(store: &mut SnapshotStore) -> Result<(), StoreError> {
@@ -340,23 +321,7 @@ fn collect_block(store: &mut SnapshotStore) -> Result<(), StoreError> {
         return Ok(());
     }
 
-    collect_bounded_device_tree(
-        store,
-        block_dir,
-        "block",
-        &[
-            "size",
-            "removable",
-            "ro",
-            "capability",
-            "ext_range",
-            "stat",
-            "inflight",
-        ],
-        1_048_576,
-        16,
-        2,
-    )
+    collect_bounded_device_tree(store, block_dir, "block", &[], 1_048_576, 16, 2)
 }
 
 fn collect_bounded_device_tree(
@@ -370,6 +335,9 @@ fn collect_bounded_device_tree(
 ) -> Result<(), StoreError> {
     let limits = BoundedTraversalLimits::new(max_devices, max_depth, 500);
     let read_limits = BoundedReadLimits::new(max_bytes, 200);
+    let config = AutoDiscoverConfig::sys_device_class();
+    // Use auto-discovery when attr_files is empty
+    let auto_discover = attr_files.is_empty();
 
     let listing = match list_dir_entries(root, limits) {
         Ok(listing) => listing,
@@ -398,119 +366,139 @@ fn collect_bounded_device_tree(
 
         let device_dir = root.join(&entry.name);
 
-        for attr in attr_files {
-            let source_path = device_dir.join(attr);
-            match read_file_bounded(&source_path, read_limits) {
-                Ok(result) => {
-                    let out_path = output_path(&source_path);
-                    let bytes = result.content.len() as u64;
-                    store.write_raw_file(&out_path, &result.content)?;
-
-                    let status = if result.was_truncated {
-                        ManifestStatus::Truncated
-                    } else {
-                        ManifestStatus::Captured
-                    };
-
-                    let entry = ManifestEntry::new(
-                        format!("sys.{domain}.{}.{attr}", entry.name),
-                        SourceSlug::Sys,
+        if auto_discover {
+            // Auto-discover: list device directory, read all non-blacklisted files
+            let dev_limit = BoundedTraversalLimits::new(128, config.max_depth, config.timeout_ms);
+            if let Ok(dev_listing) = list_dir_entries(&device_dir, dev_limit) {
+                for dev_entry in &dev_listing.entries {
+                    if dev_entry.is_dir {
+                        continue;
+                    }
+                    if config.is_blacklisted(&dev_entry.name) {
+                        continue;
+                    }
+                    let source_path = device_dir.join(&dev_entry.name);
+                    sys_read_and_record(
+                        store,
+                        &source_path,
                         domain,
-                        format!("{}/{}", entry.name, attr),
+                        &entry.name,
+                        &dev_entry.name,
+                        read_limits,
                         ObjectKind::File,
-                        status,
-                    )
-                    .with_path(out_path.to_string_lossy())
-                    .with_bytes(bytes)
-                    .with_limits(ObjectLimits::new(
-                        read_limits.max_bytes,
-                        read_limits.timeout_ms,
-                        1,
-                        0,
-                    ));
-
-                    store.record_object(entry)?;
-                }
-                Err(error) => {
-                    let status = fs_error_to_manifest_status(&error);
-                    let entry = ManifestEntry::new(
-                        format!("sys.{domain}.{}.{attr}", entry.name),
-                        SourceSlug::Sys,
-                        domain,
-                        format!("{}/{}", entry.name, attr),
-                        ObjectKind::File,
-                        status,
-                    )
-                    .with_reason(error.to_string())
-                    .with_limits(ObjectLimits::new(
-                        read_limits.max_bytes,
-                        read_limits.timeout_ms,
-                        1,
-                        0,
-                    ));
-
-                    store.record_object(entry)?;
+                    )?;
                 }
             }
-        }
+        } else {
+            // Hardcoded attribute list (legacy mode, kept for specific cases)
+            for attr in attr_files {
+                let source_path = device_dir.join(attr);
+                sys_read_and_record(
+                    store,
+                    &source_path,
+                    domain,
+                    &entry.name,
+                    attr,
+                    read_limits,
+                    ObjectKind::File,
+                )?;
+            }
 
-        let symlink_files = ["device", "subsystem"];
-        for symlink in &symlink_files {
-            let source_path = device_dir.join(symlink);
-            match read_link_bounded(&source_path, read_limits) {
-                Ok(target) => {
+            // Always try symlink resolution for device/subsystem
+            for symlink in &["device", "subsystem"] {
+                let source_path = device_dir.join(symlink);
+                if let Ok(target) = read_link_bounded(&source_path, read_limits) {
                     let out_path = output_path(&source_path);
                     let content = target.to_string_lossy().into_owned();
-                    store.write_raw_file(&out_path, content.as_bytes())?;
-
-                    let entry = ManifestEntry::new(
-                        format!("sys.{domain}.{}.{symlink}", entry.name),
-                        SourceSlug::Sys,
-                        domain,
-                        format!("{}/{}", entry.name, symlink),
-                        ObjectKind::Symlink,
-                        ManifestStatus::Captured,
-                    )
-                    .with_path(out_path.to_string_lossy())
-                    .with_bytes(content.len() as u64)
-                    .with_limits(ObjectLimits::new(
-                        read_limits.max_bytes,
-                        read_limits.timeout_ms,
-                        1,
-                        0,
-                    ));
-
-                    store.record_object(entry)?;
+                    if store.write_raw_file(&out_path, content.as_bytes()).is_ok() {
+                        let entry = ManifestEntry::new(
+                            format!("sys.{domain}.{}.{symlink}", entry.name),
+                            SourceSlug::Sys,
+                            domain,
+                            format!("{}/{}", entry.name, symlink),
+                            ObjectKind::Symlink,
+                            ManifestStatus::Captured,
+                        )
+                        .with_path(out_path.to_string_lossy())
+                        .with_bytes(content.len() as u64)
+                        .with_limits(ObjectLimits::new(
+                            read_limits.max_bytes,
+                            read_limits.timeout_ms,
+                            1,
+                            0,
+                        ));
+                        store.record_object(entry)?;
+                    }
                 }
-                Err(_error) => {}
             }
-        }
-
-        let uevent_path = device_dir.join("uevent");
-        match read_file_bounded(&uevent_path, BoundedReadLimits::new(4_096, 50)) {
-            Ok(result) => {
-                let out_path = output_path(&uevent_path);
-                let bytes = result.content.len() as u64;
-                store.write_raw_file(&out_path, &result.content)?;
-
-                let entry = ManifestEntry::new(
-                    format!("sys.{domain}.{}.uevent", entry.name),
-                    SourceSlug::Sys,
-                    domain,
-                    format!("{}/uevent", entry.name),
-                    ObjectKind::File,
-                    ManifestStatus::Captured,
-                )
-                .with_path(out_path.to_string_lossy())
-                .with_bytes(bytes)
-                .with_limits(ObjectLimits::new(4_096, 50, 1, 0));
-
-                store.record_object(entry)?;
-            }
-            Err(_error) => {}
         }
     }
 
+    Ok(())
+}
+
+fn sys_read_and_record(
+    store: &mut SnapshotStore,
+    source_path: &Path,
+    domain: &str,
+    device_name: &str,
+    attr_name: &str,
+    limits: BoundedReadLimits,
+    kind: ObjectKind,
+) -> Result<(), StoreError> {
+    let result = match kind {
+        ObjectKind::Symlink => {
+            if let Ok(target) = read_link_bounded(source_path, limits) {
+                let out_path = output_path(source_path);
+                let content = target.to_string_lossy().into_owned();
+                let bytes = content.len() as u64;
+                store.write_raw_file(&out_path, content.as_bytes())?;
+                Some((out_path, bytes, false))
+            } else {
+                None
+            }
+        }
+        _ => match read_file_bounded(source_path, limits) {
+            Ok(r) => {
+                let out_path = output_path(source_path);
+                let bytes = r.content.len() as u64;
+                store.write_raw_file(&out_path, &r.content)?;
+                Some((out_path, bytes, r.was_truncated))
+            }
+            Err(_) => None,
+        },
+    };
+
+    if let Some((out_path, bytes, was_truncated)) = result {
+        let status = if was_truncated {
+            ManifestStatus::Truncated
+        } else {
+            ManifestStatus::Captured
+        };
+        let entry = ManifestEntry::new(
+            format!("sys.{domain}.{device_name}.{attr_name}"),
+            SourceSlug::Sys,
+            domain,
+            format!("{device_name}/{attr_name}"),
+            kind,
+            status,
+        )
+        .with_path(out_path.to_string_lossy())
+        .with_bytes(bytes)
+        .with_limits(ObjectLimits::new(limits.max_bytes, limits.timeout_ms, 1, 0));
+        store.record_object(entry)?;
+    } else {
+        let entry = ManifestEntry::new(
+            format!("sys.{domain}.{device_name}.{attr_name}"),
+            SourceSlug::Sys,
+            domain,
+            format!("{device_name}/{attr_name}"),
+            kind,
+            ManifestStatus::NotFound,
+        )
+        .with_limits(ObjectLimits::new(limits.max_bytes, limits.timeout_ms, 1, 0));
+        store.record_object(entry)?;
+    }
     Ok(())
 }
 
@@ -519,36 +507,7 @@ fn collect_devices_cpu(store: &mut SnapshotStore) -> Result<(), StoreError> {
     if !root.exists() {
         return Ok(());
     }
-    collect_bounded_device_tree(
-        store,
-        root,
-        "devices_cpu",
-        &[
-            "cpufreq/scaling_governor",
-            "cpufreq/scaling_cur_freq",
-            "cpufreq/cpuinfo_max_freq",
-            "cpufreq/cpuinfo_min_freq",
-            "cpufreq/scaling_available_governors",
-            "topology/core_id",
-            "topology/physical_package_id",
-            "topology/thread_siblings_list",
-            "cache/index0/coherency_line_size",
-            "cache/index0/number_of_sets",
-            "cache/index0/size",
-            "cache/index0/type",
-            "cache/index1/size",
-            "cache/index1/type",
-            "cache/index2/size",
-            "cache/index2/type",
-            "cache/index3/size",
-            "cache/index3/type",
-            "power/energy_perf_bias",
-            "online",
-        ],
-        1_048_576,
-        64,
-        3,
-    )
+    collect_bounded_device_tree(store, root, "devices_cpu", &[], 1_048_576, 64, 3)
 }
 
 fn collect_devices_node(store: &mut SnapshotStore) -> Result<(), StoreError> {
@@ -556,24 +515,7 @@ fn collect_devices_node(store: &mut SnapshotStore) -> Result<(), StoreError> {
     if !root.exists() {
         return Ok(());
     }
-    collect_bounded_device_tree(
-        store,
-        root,
-        "devices_node",
-        &[
-            "cpumap",
-            "meminfo",
-            "distance",
-            "compact",
-            "hugepages/hugepages-2048kB/nr_hugepages",
-            "hugepages/hugepages-1048576kB/nr_hugepages",
-            "vmstat",
-            "numastat",
-        ],
-        1_048_576,
-        32,
-        3,
-    )
+    collect_bounded_device_tree(store, root, "devices_node", &[], 1_048_576, 32, 3)
 }
 
 fn collect_hwmon(store: &mut SnapshotStore) -> Result<(), StoreError> {
@@ -581,28 +523,7 @@ fn collect_hwmon(store: &mut SnapshotStore) -> Result<(), StoreError> {
     if !root.exists() {
         return Ok(());
     }
-    collect_bounded_device_tree(
-        store,
-        root,
-        "hwmon",
-        &[
-            "name",
-            "temp1_input",
-            "temp1_max",
-            "temp1_crit",
-            "temp1_label",
-            "fan1_input",
-            "fan1_min",
-            "fan1_label",
-            "in0_input",
-            "in0_label",
-            "curr1_input",
-            "power1_input",
-        ],
-        1_048_576,
-        64,
-        2,
-    )
+    collect_bounded_device_tree(store, root, "hwmon", &[], 1_048_576, 64, 2)
 }
 
 fn collect_thermal(store: &mut SnapshotStore) -> Result<(), StoreError> {
@@ -610,25 +531,7 @@ fn collect_thermal(store: &mut SnapshotStore) -> Result<(), StoreError> {
     if !root.exists() {
         return Ok(());
     }
-    collect_bounded_device_tree(
-        store,
-        root,
-        "thermal",
-        &[
-            "type",
-            "temp",
-            "mode",
-            "policy",
-            "trip_point_0_temp",
-            "trip_point_0_type",
-            "trip_point_1_temp",
-            "trip_point_1_type",
-            "cooling_device",
-        ],
-        1_048_576,
-        32,
-        2,
-    )
+    collect_bounded_device_tree(store, root, "thermal", &[], 1_048_576, 32, 2)
 }
 
 fn collect_module_sys(store: &mut SnapshotStore) -> Result<(), StoreError> {
@@ -636,23 +539,7 @@ fn collect_module_sys(store: &mut SnapshotStore) -> Result<(), StoreError> {
     if !root.exists() {
         return Ok(());
     }
-    collect_bounded_device_tree(
-        store,
-        root,
-        "module",
-        &[
-            "version",
-            "parameters",
-            "refcnt",
-            "holders",
-            "sections/.text",
-            "sections/.data",
-            "sections/.bss",
-        ],
-        1_048_576,
-        256,
-        3,
-    )
+    collect_bounded_device_tree(store, root, "module", &[], 1_048_576, 256, 3)
 }
 
 fn collect_kernel_sys(store: &mut SnapshotStore) -> Result<(), StoreError> {
@@ -660,26 +547,7 @@ fn collect_kernel_sys(store: &mut SnapshotStore) -> Result<(), StoreError> {
     if !root.exists() {
         return Ok(());
     }
-    collect_bounded_device_tree(
-        store,
-        root,
-        "kernel",
-        &[
-            "uevent_seqnum",
-            "kexec_crash_loaded",
-            "kexec_crash_size",
-            "vmcoreinfo",
-            "mm/mempolicy",
-            "mm/pages_to_scan",
-            "notes",
-            "tracing/trace",
-            "tracing/current_tracer",
-            "tracing/available_tracers",
-        ],
-        1_048_576,
-        64,
-        3,
-    )
+    collect_bounded_device_tree(store, root, "kernel", &[], 1_048_576, 64, 3)
 }
 
 fn collect_firmware_sys(store: &mut SnapshotStore) -> Result<(), StoreError> {
@@ -687,30 +555,7 @@ fn collect_firmware_sys(store: &mut SnapshotStore) -> Result<(), StoreError> {
     if !root.exists() {
         return Ok(());
     }
-    collect_bounded_device_tree(
-        store,
-        root,
-        "firmware",
-        &[
-            "acpi/pm_profile",
-            "acpi/tables/APIC",
-            "acpi/tables/FACP",
-            "dmi/id/bios_vendor",
-            "dmi/id/bios_version",
-            "dmi/id/board_vendor",
-            "dmi/id/board_name",
-            "dmi/id/product_name",
-            "dmi/id/product_version",
-            "dmi/id/sys_vendor",
-            "memmap",
-            "efi/fw_vendor",
-            "efi/fw_platform_size",
-            "efi/runtime",
-        ],
-        1_048_576,
-        128,
-        3,
-    )
+    collect_bounded_device_tree(store, root, "firmware", &[], 1_048_576, 128, 3)
 }
 
 fn collect_power_supply(store: &mut SnapshotStore) -> Result<(), StoreError> {
@@ -718,30 +563,5 @@ fn collect_power_supply(store: &mut SnapshotStore) -> Result<(), StoreError> {
     if !root.exists() {
         return Ok(());
     }
-    collect_bounded_device_tree(
-        store,
-        root,
-        "power_supply",
-        &[
-            "type",
-            "status",
-            "capacity",
-            "capacity_level",
-            "voltage_now",
-            "current_now",
-            "power_now",
-            "energy_now",
-            "energy_full",
-            "energy_full_design",
-            "health",
-            "technology",
-            "present",
-            "model_name",
-            "manufacturer",
-            "serial_number",
-        ],
-        1_048_576,
-        32,
-        2,
-    )
+    collect_bounded_device_tree(store, root, "power_supply", &[], 1_048_576, 32, 2)
 }
