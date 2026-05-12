@@ -34,15 +34,14 @@ jobs:
           path: |
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
-            target/
           key: ${{ runner.os }}-${{ matrix.toolchain }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-${{ matrix.toolchain }}-cargo-
 
       - name: cargo check
-        run: cargo check --workspace --all-targets
+        run: cargo check --workspace --all-targets --locked
 
       - name: cargo check (release)
-        run: cargo check --workspace --all-targets --release
+        run: cargo check --workspace --all-targets --release --locked
 
   test:
     name: Test
@@ -63,12 +62,11 @@ jobs:
           path: |
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
-            target/
           key: ${{ runner.os }}-stable-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-stable-cargo-
 
       - name: cargo test
-        run: cargo test --workspace
+        run: cargo test --workspace --locked
 
   lint:
     name: Lint
@@ -89,7 +87,6 @@ jobs:
           path: |
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
-            target/
           key: ${{ runner.os }}-stable-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-stable-cargo-
 
@@ -97,7 +94,7 @@ jobs:
         run: cargo fmt --check
 
       - name: cargo clippy (all targets)
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
   audit:
     name: Security Audit
