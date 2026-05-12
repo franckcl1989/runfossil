@@ -4,362 +4,448 @@
 
 This document is the authoritative collection decision matrix for `runfossil`.
 It maps the complete Linux runtime source taxonomy to project collection
-decisions.
-
-The Source Taxonomy defines what exists. This matrix defines what `runfossil`
-intends to collect, what it intentionally limits, what is conditional, what is
-deferred until a native implementation exists, and what must not be collected.
-
-## Completeness Rule
-
-Each row is a coverage unit. A coverage unit may be a single file, a directory
-tree, a symlink family, a native protocol response, or an event-window domain.
-
-When a row names a source path or domain from the taxonomy, that row accounts for
-all raw snapshot objects that belong to that path, object family, or domain. For
-example, the `/proc/stat` row covers CPU counters, context switch counters, boot
-time, fork counters, running process counters, and blocked process counters.
-
-This keeps the matrix complete without duplicating every field-level description
-from the taxonomy. `runfossil` preserves raw evidence; it does not need separate
-collection decisions for each field inside a raw file.
-
-Completeness is evaluated by assignment:
-
-- Every L1 source family in the Source Taxonomy must have a section here.
-- Every L2 domain in the Source Taxonomy must map to at least one row here.
-- Every raw object family must have exactly one primary coverage unit, unless it
-  is explicitly excluded.
-- Overlapping rows are allowed only when one row is a fallback or supplement and
-  the rationale says so.
-- A new source, domain, or object family is incomplete until it has a decision,
-  priority, mode, and rationale.
+decisions with explicit auto-discovery strategies and blacklist rules.
 
 ## Decision Vocabulary
 
 ```text
+collect-auto
+  Auto-discover available objects by scanning the source root. Collect
+  everything found except blacklisted entries. Bounds still apply.
+
 collect
-  Required target. Capture when the source exists.
+  Required target with explicit path or method. Used where auto-discovery
+  is infeasible (D-Bus, netlink, kmsg).
 
 conditional
-  Valid target. Capture only when the source exists, native support is present,
-  and planner budget allows it.
+  Valid target. Collect only when the source exists, native support is
+  present, and planner budget allows.
 
 limited
-  Valid target, but intentionally bounded by size, count, depth, metadata-only,
-  event-window, or selected-object policy.
+  Valid target, intentionally bounded by strict size, count, depth,
+  metadata-only, or selected-object policy.
 
 deferred-native
-  Valid target, but not collected until a Rust-native implementation exists.
-  External commands are not an acceptable substitute.
+  Valid target, but not collected until a Rust-native implementation
+  exists. External commands are not an acceptable substitute.
 
 exclude
-  Intentionally not collected because it is outside scope, unsafe, destructive,
-  unbounded, or not raw Linux runtime evidence.
+  Intentionally not collected: outside scope, unsafe, destructive,
+  unbounded, application-layer, or not raw Linux runtime evidence.
 ```
 
 ## Priority Vocabulary
 
 ```text
-P0  Core global runtime evidence.
+P0  Core global runtime evidence — small, volatile, high-value.
 P1  Process and immediate runtime summary evidence.
-P2  Subsystem runtime evidence.
-P3  Conditional deep evidence.
-P4  High-cost or high-risk evidence.
+P2  Subsystem runtime evidence — devices, cgroups, filesystems.
+P3  Conditional deep evidence — per-process details, D-Bus, logs.
+P4  High-cost or high-risk evidence — debugfs, bus trees, large payloads.
 NA  Not scheduled for collection.
 ```
 
 ## Collection Mode Vocabulary
 
 ```text
-raw-file
-raw-file-set
-dir-listing
-symlink-targets
-metadata
-bounded-tree
-bounded-window
-native-protocol
-native-netlink
-native-socket
-metadata-only
-skip
+auto-discover    Scan root; collect all non-blacklisted entries.
+raw-file         Single bounded file read.
+raw-file-set     Set of related files.
+dir-listing      Directory entry names + types.
+symlink-targets  Symlink resolution targets.
+metadata         File metadata (type, permissions, size, dev numbers).
+bounded-tree     Depth/count-limited recursive tree walk.
+bounded-window   Byte-limited event window read.
+native-protocol  Native Rust protocol (D-Bus).
+native-netlink   Native Rust netlink dump.
+metadata-only    Existence + metadata; no content copy.
+skip             Not collected.
 ```
 
-## Vocabulary Relationship
+## Blacklist Conventions
 
-This matrix defines static coverage decisions. It does not define final runtime
-outcomes. Runtime artifacts use two additional vocabularies:
+Each auto-discovery domain defines a **blacklist** of entries that must not be
+collected. Blacklist entries fall into these categories:
 
-- `plan.json` records a per-host plan decision such as `scheduled`, `limited`,
-  `skipped_by_policy`, `unsupported`, or `not_present`.
-- `manifest.json` records final object status such as `captured`, `vanished`,
-  `not_found`, `permission_denied`, `timeout`, `size_limited`, `truncated`,
-  `skipped_by_policy`, `unsupported`, or `io_error`.
+- **write-interface** — reading may trigger a kernel action (sysrq-trigger,
+  clear_refs, bind, unbind, probe, reset, trigger)
+- **memory-dump** — reading returns raw memory contents (kcore, mem, pagemap,
+  /dev/mem, /dev/kmem, /dev/port)
+- **security-sensitive** — reading exposes kernel addresses or key material
+  (kallsyms)
+- **device-content** — reading device nodes may block, stream, or have side
+  effects (watchdog, sg*, bsg*, cpu/*/msr)
+- **application-layer** — belongs to application software, not Linux runtime
+  (container engine sockets)
 
-The authoritative mapping between coverage decisions, plan decisions, and
-manifest statuses is maintained in the
-[Snapshot Specification](SNAPSHOT_SPECIFICATION.md).
+---
 
-## /proc
+## 1. /proc — Global files
 
-| Domain | Coverage unit | Decision | Priority | Mode | Rationale |
-|---|---|---:|---:|---|---|
-| System overview | `/proc/loadavg` | collect | P0 | raw-file | Small volatile host pressure summary. |
-| System overview | `/proc/uptime` | collect | P0 | raw-file | Small boot/runtime context. |
-| System overview | `/proc/version` | collect | P0 | raw-file | Kernel build identity. |
-| System overview | `/proc/cmdline` | collect | P0 | raw-file | Runtime boot parameters affect diagnosis. |
-| System overview | `/proc/cpuinfo` | collect | P0 | raw-file | CPU topology and feature baseline. |
-| System overview | `/proc/swaps` | collect | P0 | raw-file | Swap state is important for memory incidents. |
-| CPU and scheduler | `/proc/stat` | collect | P0 | raw-file | Core CPU and scheduler counters. |
-| CPU and scheduler | `/proc/schedstat` | collect | P0 | raw-file | Scheduler counters, low cost when present. |
-| Memory and VM | `/proc/meminfo` | collect | P0 | raw-file | Core memory evidence. |
-| Memory and VM | `/proc/vmstat` | collect | P0 | raw-file | VM activity, reclaim, swap, compaction, OOM counters. |
-| Memory and VM | `/proc/slabinfo` | collect | P2 | raw-file | Kernel object memory state; usually bounded. |
-| Memory and VM | `/proc/zoneinfo` | collect | P2 | raw-file | Memory zone state for pressure analysis. |
-| Memory and VM | `/proc/buddyinfo` | collect | P2 | raw-file | Fragmentation evidence, low cost. |
-| Memory and VM | `/proc/pagetypeinfo` | conditional | P3 | raw-file | Useful but can be larger; collect under budget. |
-| PSI pressure | `/proc/pressure/cpu` | collect | P0 | raw-file | Direct runtime pressure signal. |
-| PSI pressure | `/proc/pressure/memory` | collect | P0 | raw-file | Direct runtime pressure signal. |
-| PSI pressure | `/proc/pressure/io` | collect | P0 | raw-file | Direct runtime pressure signal. |
-| Interrupt and softirq | `/proc/interrupts` | collect | P0 | raw-file | Interrupt imbalance and device evidence. |
-| Interrupt and softirq | `/proc/softirqs` | collect | P0 | raw-file | Softirq runtime evidence. |
-| Interrupt and softirq | `/proc/irq` | limited | P2 | bounded-tree | Useful IRQ details, but traverse with depth and file limits. |
-| Block statistics | `/proc/diskstats` | collect | P0 | raw-file | Core block I/O evidence. |
-| Block statistics | `/proc/partitions` | collect | P0 | raw-file | Block device inventory. |
-| Network stack | `/proc/net/tcp`, `/proc/net/tcp6` | collect | P0 | raw-file-set | Socket evidence, low cost compared with live command output. |
-| Network stack | `/proc/net/udp`, `/proc/net/udp6` | collect | P0 | raw-file-set | Socket evidence. |
-| Network stack | `/proc/net/unix`, `/proc/net/raw`, `/proc/net/packet` | collect | P0 | raw-file-set | Local socket and packet socket evidence. |
-| Network stack | `/proc/net/dev` | collect | P0 | raw-file | Interface counters. |
-| Network stack | `/proc/net/snmp`, `/proc/net/netstat` | collect | P0 | raw-file-set | Protocol counters. |
-| Network stack | `/proc/net/arp`, `/proc/net/route`, `/proc/net/ipv6_route` | collect | P0 | raw-file-set | Route and neighbor raw fallback evidence. |
-| Network stack | `/proc/net/dev_mcast`, `/proc/net/igmp`, `/proc/net/igmp6` | conditional | P2 | raw-file-set | Multicast state, low value on hosts without multicast use. |
-| Network stack | `/proc/net/netfilter` | limited | P3 | bounded-tree | Netfilter runtime state can vary; use bounds. |
-| IPC | `/proc/sysvipc/shm`, `/proc/sysvipc/msg`, `/proc/sysvipc/sem` | collect | P2 | raw-file-set | IPC objects are volatile and low cost. |
-| File locks | `/proc/locks` | collect | P2 | raw-file | File-lock evidence is volatile. |
-| Mount and filesystem view | `/proc/mounts` | collect | P0 | raw-file | Mount table evidence. |
-| Mount and filesystem view | `/proc/self/mountinfo` | collect | P0 | raw-file | Mount namespace view. |
-| Mount and filesystem view | `/proc/self/mountstats` | conditional | P2 | raw-file | Useful but may be large on NFS-heavy systems. |
-| Mount and filesystem view | `/proc/filesystems` | collect | P0 | raw-file | Registered filesystem inventory. |
-| Kernel parameters | `/proc/sys/kernel`, `/proc/sys/vm`, `/proc/sys/fs` | limited | P2 | bounded-tree | Runtime parameters are useful but should be bounded. |
-| Kernel parameters | `/proc/sys/net`, `/proc/sys/user`, `/proc/sys/debug` | limited | P2 | bounded-tree | Runtime parameters are useful but should be bounded. |
-| Kernel modules | `/proc/modules` | collect | P0 | raw-file | Loaded module evidence. |
-| Kernel resource and hardware map | `/proc/iomem`, `/proc/ioports` | collect | P2 | raw-file-set | Hardware resource maps. |
-| Kernel resource and hardware map | `/proc/devices`, `/proc/misc`, `/proc/cgroups` | collect | P2 | raw-file-set | Kernel device and cgroup controller inventory. |
-| Kernel resource and hardware map | `/proc/acpi`, `/proc/scsi` | conditional | P3 | bounded-tree | Present only on some systems; bounded traversal. |
-| Crypto, key, and timer | `/proc/crypto`, `/proc/key-users` | collect | P2 | raw-file-set | Runtime crypto and key user state. |
-| Crypto, key, and timer | `/proc/keys` | limited | P4 | raw-file | Permission and sensitivity concerns; capture only if policy allows. |
-| Crypto, key, and timer | `/proc/timer_list` | conditional | P4 | raw-file | Often restricted and potentially large. |
-| Crypto, key, and timer | `/proc/kallsyms` | limited | P4 | raw-file | Sensitive and policy-restricted; bounded if captured. |
-| Crypto, key, and timer | `/proc/kcore` | limited | P4 | metadata-only | Do not copy kernel core image; record metadata only. |
-| Process and thread | `/proc/<pid>/status`, `stat`, `statm`, `cmdline`, `comm` | collect | P1 | raw-file-set | Core process summary. |
-| Process and thread | `/proc/<pid>/environ` | limited | P3 | raw-file | Sensitive; bounded and may be skipped by policy. |
-| Process and thread | `/proc/<pid>/cwd`, `root`, `exe` | collect | P1 | symlink-targets | Process relation evidence, low cost. |
-| Process and thread | `/proc/<pid>/limits`, `io`, `sched`, `schedstat`, `cgroup` | collect | P1 | raw-file-set | Resource and scheduler evidence. |
-| Process and thread | `/proc/<pid>/oom_score`, `oom_score_adj` | collect | P1 | raw-file-set | OOM diagnosis evidence. |
-| Process and thread | `/proc/<pid>/ns` | collect | P1 | symlink-targets | Namespace relation evidence. |
-| Process and thread | `/proc/<pid>/fd` | collect | P1 | dir-listing | FD inventory without reading targets as content. |
-| Process and thread | `/proc/<pid>/fdinfo` | conditional | P3 | raw-file-set | Valuable but can scale with FD count. |
-| Process and thread | `/proc/<pid>/maps`, `smaps_rollup`, `numa_maps` | conditional | P3 | raw-file-set | Memory mapping evidence, bounded by process count and pressure. |
-| Process and thread | `/proc/<pid>/smaps` | limited | P4 | raw-file | High-cost per-process data; selected PIDs only. |
-| Process and thread | `/proc/<pid>/pagemap` | limited | P4 | metadata-only | Sensitive and large; do not copy by default. |
-| Process and thread | `/proc/<pid>/stack`, `wchan` | conditional | P3 | raw-file-set | Useful for blocked tasks; permission and kernel config dependent. |
-| Process and thread | `/proc/<pid>/task` | conditional | P3 | dir-listing | Thread inventory; bounded on high-thread systems. |
-| Process and thread | `/proc/<pid>/task/<tid>/status`, `stat`, `sched`, `schedstat`, `wchan`, `stack` | conditional | P3 | raw-file-set | Thread evidence; deepen under scale and incident signals. |
+**Strategy**: Scan `/proc` root; skip PID-named directories; collect all
+remaining regular files. Single files bounded at 1 MiB / 100ms.
 
-## /sys
-
-| Domain | Coverage unit | Decision | Priority | Mode | Rationale |
-|---|---|---:|---:|---|---|
-| Network device | `/sys/class/net` | collect | P2 | bounded-tree | Interface attributes, statistics, queues, and device links. |
-| Block device | `/sys/block` | collect | P2 | bounded-tree | Block attributes, queues, stats, partitions, mapper relations. |
-| CPU device | `/sys/devices/system/cpu` | collect | P2 | bounded-tree | CPU online, topology, frequency, idle, vulnerability state. |
-| NUMA | `/sys/devices/system/node` | collect | P2 | bounded-tree | NUMA node, memory, distance, hugepage evidence. |
-| Cgroup | `/sys/fs/cgroup` | collect | P2 | bounded-tree | Cgroup hierarchy and controller state, bounded by scale. |
-| Kernel module | `/sys/module` | conditional | P2 | bounded-tree | Module parameters and holders; bound traversal. |
-| Kernel state | `/sys/kernel` | conditional | P2 | bounded-tree | Kernel state, livepatch, profiling, security, MM state. |
-| DebugFS | `/sys/kernel/debug` | limited | P4 | bounded-tree | Policy-sensitive and potentially large; collect selected safe subtrees only. |
-| TraceFS | `/sys/kernel/tracing` | limited | P4 | bounded-tree | Do not enable tracing; capture existing state under strict bounds. |
-| TraceFS | `/sys/kernel/debug/tracing` | limited | P4 | bounded-tree | Legacy mount, same restrictions as tracefs. |
-| BPF filesystem | `/sys/fs/bpf` | limited | P4 | bounded-tree | Pinned object metadata is useful; map/program dumps may be unsafe or large. |
-| SecurityFS | `/sys/kernel/security` | conditional | P3 | bounded-tree | LSM, IMA, EVM, lockdown state when present and readable. |
-| ConfigFS | `/sys/kernel/config` | conditional | P3 | bounded-tree | Dynamic kernel object configuration; bounded traversal. |
-| Pstore | `/sys/fs/pstore` | collect | P2 | bounded-tree | Persistent crash evidence, high value. |
-| Filesystem state | `/sys/fs` | conditional | P3 | bounded-tree | Filesystem-specific runtime state; avoid blind recursion. |
-| Firmware | `/sys/firmware` | conditional | P3 | bounded-tree | Firmware runtime state where present. |
-| Power | `/sys/power` | collect | P2 | raw-file-set | Small power state evidence. |
-| Hardware monitor and thermal | `/sys/class/hwmon`, `/sys/class/thermal`, `/sys/class/power_supply` | collect | P2 | bounded-tree | Sensor, thermal, and power runtime state. |
-| Graphics and accelerator | `/sys/class/drm`, `/sys/class/accel` | conditional | P3 | bounded-tree | Device and connector state when present. |
-| RDMA and InfiniBand | `/sys/class/infiniband`, `/sys/class/infiniband_verbs` | conditional | P3 | bounded-tree | RDMA device state when present. |
-| NVMe and storage class | `/sys/class/nvme`, `/sys/class/scsi_host`, `/sys/class/scsi_device`, `/sys/class/ata_link` | conditional | P3 | bounded-tree | Storage class state when present. |
-| Watchdog, RTC, input, misc | `/sys/class/watchdog`, `/sys/class/rtc`, `/sys/class/input`, `/sys/class/dmi`, `/sys/class/leds`, `/sys/class/gpio`, `/sys/class/backlight` | conditional | P3 | bounded-tree | Miscellaneous device state when present. |
-| Hypervisor and virtualization | `/sys/hypervisor`, `/sys/devices/virtual` | conditional | P3 | bounded-tree | VM and virtual device evidence. |
-| IOMMU | `/sys/kernel/iommu_groups` | conditional | P3 | bounded-tree | IOMMU group evidence when present. |
-| Bus, device, and driver | `/sys/bus`, `/sys/devices` | limited | P4 | bounded-tree | Very large tree; collect selected metadata and links under strict limits. |
-
-## /run
-
-| Domain | Coverage unit | Decision | Priority | Mode | Rationale |
-|---|---|---:|---:|---|---|
-| systemd runtime | `/run/systemd` | conditional | P3 | bounded-tree | Runtime metadata and sockets; detailed state via native service collector. |
-| User runtime | `/run/user` | limited | P3 | bounded-tree | Session runtime metadata; avoid copying user payloads. |
-| Lock | `/run/lock` | collect | P2 | bounded-tree | Active lock evidence, low cost. |
-| Daemon PID | `/run/*.pid` | collect | P2 | raw-file-set | Runtime PID evidence. |
-| Container temporary state | `/run/docker`, `/run/containerd`, `/run/crio`, `/run/runc` | conditional | P3 | bounded-tree | Runtime socket and metadata discovery; detailed state via native protocol. |
-| Udev runtime | `/run/udev` | conditional | P3 | bounded-tree | Device runtime database and queue state. |
-| D-Bus runtime | `/run/dbus` | conditional | P3 | metadata | Socket and metadata discovery; protocol state via native implementation. |
-| Resolver runtime | `/run/systemd/resolve` | conditional | P3 | bounded-tree | Resolver runtime metadata when present. |
-
-## /dev
-
-| Domain | Coverage unit | Decision | Priority | Mode | Rationale |
-|---|---|---:|---:|---|---|
-| Device node | `/dev` | limited | P2 | metadata | Capture node metadata, not arbitrary device contents. |
-| Block device node | `/dev/block`, `/dev/disk` | collect | P2 | symlink-targets | Device mappings and stable identifiers. |
-| Device mapper | `/dev/mapper` | collect | P2 | symlink-targets | Logical device mapping evidence. |
-| Loop device | `/dev/loop*` | collect | P2 | metadata | Device node metadata only. |
-| FUSE device | `/dev/fuse` | collect | P2 | metadata | Availability and metadata only. |
-| TTY / PTY | `/dev/tty*`, `/dev/pts` | limited | P3 | metadata | Terminal inventory; do not read terminal streams. |
-| Randomness and kernel message | `/dev/random`, `/dev/urandom` | collect | P2 | metadata | Metadata only; do not read random streams as evidence. |
-| Randomness and kernel message | `/dev/kmsg` | conditional | P0 | bounded-window | Kernel messages through non-destructive bounded read policy. |
-| Pseudo device | `/dev/null`, `/dev/zero`, `/dev/full`, `/dev/console`, `/dev/tty` | collect | P2 | metadata | Metadata only; do not read pseudo-device streams. |
-
-## Kernel Ring Buffer
-
-| Domain | Coverage unit | Decision | Priority | Mode | Rationale |
-|---|---|---:|---:|---|---|
-| Kernel error events | panic, oops, BUG, WARNING, GPF, stack trace windows | collect | P0 | bounded-window | High-value volatile kernel evidence. |
-| OOM events | global OOM, cgroup OOM, victim, allocation failure, killed process windows | collect | P0 | bounded-window | Critical incident evidence. |
-| Lockup and stall events | soft lockup, hard lockup, hung task, RCU stall, workqueue stall, blocked task windows | collect | P0 | bounded-window | Critical runtime-stall evidence. |
-| Device and driver events | disk, NVMe, SCSI, USB, PCIe, network reset, firmware windows | collect | P2 | bounded-window | Device failure evidence. |
-| Filesystem events | filesystem error, read-only remount, journal, NFS, FUSE, overlayfs windows | collect | P2 | bounded-window | Storage and filesystem incident evidence. |
-| Network kernel events | link, TCP warning, neighbor failure, packet drop, queue timeout windows | collect | P2 | bounded-window | Network incident evidence. |
-
-## System Event Log Store
+**Blacklist**: `kcore`, `kallsyms`, `kpagecount`, `kpageflags`,
+`kpagecgroup`, `sysrq-trigger`
 
 | Domain | Coverage unit | Decision | Priority | Mode | Rationale |
 |---|---|---|---|---|---|
-| System event window | boot, shutdown, daemon, resource warning, system error windows | exclude | P3 | skip | Log store protocol (journal/syslog) requires a native reader; outside kernel-focused scope. File-based bounded journal window capture is handled separately. |
-| Kernel event mirror | recent kernel mirror window | exclude | P3 | skip | Journal protocol support out of scope; kernel ring buffer remains primary. |
-| Service event window | service start, stop, restart, failure, exit, watchdog windows | exclude | P3 | skip | Service event log protocol out of scope. |
-| Authentication and security | login, SSH, sudo, auth failure, permission denied windows | exclude | P3 | skip | Auth event log protocol out of scope. |
-| Container event window | container start, stop, kill, OOM, restart windows | exclude | P3 | skip | Container event log protocol out of scope. |
-| Audit event window | audit denial, syscall denial, privilege event windows | exclude | P3 | skip | Audit event log protocol out of scope. |
+| System overview | `/proc/` non-PID files | collect-auto | P0 | auto-discover | Global host state; blacklist excludes memory/symbol dumps |
+| CPU / scheduler | `/proc/stat`, `/proc/schedstat` | collect-auto | P0 | auto-discover | Discovered in scan |
+| CPU / scheduler | `/proc/sched_debug` | conditional | P4 | raw-file | Large; collect under budget only |
+| Memory / VM | `/proc/meminfo`, `/proc/vmstat`, etc. | collect-auto | P0 | auto-discover | Core memory evidence |
+| Memory / VM | `/proc/slabinfo`, `/proc/zoneinfo`, `/proc/buddyinfo` | collect-auto | P2 | auto-discover | Kernel memory details |
+| Memory / VM | `/proc/pagetypeinfo` | conditional | P3 | raw-file | Larger; collect under budget |
+| PSI pressure | `/proc/pressure/cpu`, `memory`, `io`, `irq` | collect-auto | P0 | auto-discover | All PSI files auto-discovered |
+| Interrupt / softirq | `/proc/interrupts`, `/proc/softirqs` | collect-auto | P0 | auto-discover | Core interrupt evidence |
+| Interrupt / softirq | `/proc/irq/*` | collect-auto | P2 | bounded-tree | IRQ details with depth limits |
+| Block | `/proc/diskstats`, `/proc/partitions` | collect-auto | P0 | auto-discover | Block I/O evidence |
+| Block | `/proc/mdstat` | collect-auto | P2 | raw-file | Software RAID state |
+| Network stack | `/proc/net/` all files | collect-auto | P0-P2 | auto-discover | Full /proc/net scan; all files are safe text |
+| IPC | `/proc/sysvipc/*` | collect-auto | P2 | auto-discover | SysV IPC objects |
+| File locks | `/proc/locks` | collect-auto | P2 | raw-file | Active file lock evidence |
+| Mount / filesystem | `/proc/mounts`, `/proc/filesystems`, etc. | collect-auto | P0 | auto-discover | Mount table evidence |
+| Mount / filesystem | `/proc/self/mountinfo`, `mountstats` | collect-auto | P0-P2 | auto-discover | Per-process mount view |
+| Filesystem-specific | `/proc/fs/*` | collect-auto | P3 | auto-discover | Auto-discover all fs subdirs |
+| Kernel modules | `/proc/modules` | collect-auto | P0 | auto-discover | Loaded module inventory |
+| Hardware maps | `/proc/iomem`, `/proc/ioports`, etc. | collect-auto | P2 | auto-discover | Resource maps |
+| Crypto / keys | `/proc/crypto`, `/proc/key-users` | collect-auto | P2 | auto-discover | Crypto state |
+| Crypto / keys | `/proc/keys` | limited | P4 | raw-file | Permission-sensitive; bounded |
+| Kernel symbols | `/proc/kallsyms` | **blacklist** | NA | skip | Security-sensitive |
+| Kernel memory | `/proc/kcore` | **blacklist** | NA | skip | Kernel memory image |
+| Page metadata | `/proc/kpage*` | **blacklist** | NA | skip | Large physical page dumps |
 
-## Service Manager
+---
 
-| Domain | Coverage unit | Decision | Priority | Mode | Rationale |
-|---|--:|--:|--:|---|---|
-| Manager state | manager, system, degraded, failed count, job queue | collect | P3 | native-protocol | Native D-Bus protocol support via custom D-Bus implementation. |
-| Unit state | unit list, active/sub/load/result/dependency state | collect | P3 | native-protocol | Native D-Bus ListUnits call. |
-| Service state | main process, exit status, restart, watchdog, cgroup, resource usage | collect | P3 | native-protocol | Native D-Bus unit property enumeration. |
-| Socket unit state | socket unit, listening socket, accepted connection counters | collect | P3 | native-protocol | Native D-Bus unit property enumeration. |
-| Timer unit state | timer state, last/next trigger, associated unit | collect | P3 | native-protocol | Native D-Bus unit property enumeration. |
-| Failed / degraded state | failed units, degraded state, failed jobs | collect | P3 | native-protocol | Native D-Bus ListUnitsFiltered call. |
+## 2. /proc — Per-process
 
-## Netlink
+**Strategy**: Scan each `/proc/<pid>/` directory; collect all regular files
+except blacklisted entries. Symlinks recorded by target resolution.
 
-| Domain | Coverage unit | Decision | Priority | Mode | Rationale |
-|---|---|---:|---:|---|---|
-| Link | link, flags, MTU, state, qdisc relation | collect | P2 | native-netlink | Native replacement for `ip link`. |
-| Address | IPv4/IPv6 addresses, scope, lifetimes | collect | P2 | native-netlink | Native replacement for `ip addr`. |
-| Route | route tables, default route, rules, metrics, multipath | collect | P2 | native-netlink | Native replacement for `ip route` and `ip rule`. |
-| Neighbor | ARP/IPv6 neighbors, state, failed neighbors | collect | P2 | native-netlink | Native neighbor evidence. |
-| Socket diagnostic | TCP, UDP, Unix sockets, owner, queues, memory | conditional | P3 | native-netlink | Valuable but can be large; budgeted socket dump. |
-| Conntrack | entries, counters, NAT relation, timeouts | conditional | P3 | native-netlink | Requires kernel support and can be large. |
-| Traffic control | qdisc, class, filter, backlog, drop counters | conditional | P3 | native-netlink | Useful under network incidents, requires native support. |
-| XFRM | state, policy, IPsec security associations | conditional | P3 | native-netlink | Capture when IPsec/XFRM state exists. |
+**Blacklist** (per-process): `mem`, `pagemap`, `clear_refs`, `oom_adj`,
+`coredump_filter`, `uid_map`, `gid_map`, `projid_map`, `setgroups`,
+`reclaim`, `attr/*`
 
-## Security / Audit Subsystem
-
-| Domain | Coverage unit | Decision | Priority | Mode | Rationale |
-|---|---|---:|---:|---|---|
-| Process security | capabilities, seccomp, NoNewPrivs, LSM process context | collect | P1 | raw-file-set | Derived from procfs process state. |
-| SELinux | enforcing, policy loaded, process contexts, AVC denial window | conditional | P3 | bounded-tree | Capture when SELinux/securityfs/log support is present. |
-| AppArmor | profile state, process profile, denial window | conditional | P3 | bounded-tree | Capture when AppArmor/securityfs/log support is present. |
-| Audit | audit daemon, backlog, lost counter, recent audit window | deferred-native | P3 | native-protocol | Native audit support required; no external tools. |
-| Privilege | sudo session, auth failure, privilege escalation windows | deferred-native | P3 | native-protocol | Native log/session support required. |
-
-## User / Session Database
-
-| Domain | Coverage unit | Decision | Priority | Mode | Rationale |
-|---|---|---:|---:|---|---|
-| Login session | logged-in user, login time, TTY, remote host | conditional | P3 | native-protocol | Capture through native session database support. |
-| SSH session | SSH session, remote address, TTY relation | conditional | P3 | raw-file-set | Capture from process/session evidence and native records where available. |
-| TTY / PTY | active TTY, active PTY, owner relation | conditional | P3 | metadata | Capture metadata only; do not read streams. |
-| logind | sessions, user state, seat state, linger state | collect | P3 | native-protocol | Native D-Bus logind protocol via custom D-Bus implementation. |
-| Interactive process relation | foreground process group, shell relation, interactive process | conditional | P3 | raw-file-set | Derived from procfs/session metadata when available. |
-
-## Scheduler / Job Runtime
-
-| Domain | Coverage unit | Decision | Priority | Mode | Rationale |
-|---|---|---:|---:|---|---|
-| Cron runtime | running cron job and recent cron event windows | deferred-native | P3 | native-protocol | Runtime evidence only; no static crontab capture. |
-| systemd timer runtime | timer state, last/next trigger, associated unit | deferred-native | P3 | native-protocol | Covered by native service manager collector. |
-| at / batch runtime | queued/running jobs, state, owner relation | conditional | P3 | bounded-tree | Runtime queue state only; avoid static schedule expansion. |
-| External job runtime | external job state, owner, result | deferred-native | P3 | native-protocol | Requires source-specific native integration. |
-
-## Time Synchronization Subsystem
+**Deprioritized** (tighter limits): `smaps`
 
 | Domain | Coverage unit | Decision | Priority | Mode | Rationale |
 |---|---|---|---|---|---|
-| System clock | wall clock, monotonic clock, boot time, time jump window | collect | P0 | metadata | Essential capture context via /proc/uptime, /proc/stat (btime), /etc/localtime. |
-| NTP | synchronized state, source, offset, jitter, stratum, leap | exclude | P3 | skip | NTP protocol support out of scope for kernel-focused collection. |
-| chrony | tracking, sources, activity | exclude | P3 | skip | chrony protocol support out of scope. |
-| systemd-timesyncd | timesyncd state | exclude | P3 | skip | systemd-timesyncd D-Bus protocol out of scope; file-based state from /run/systemd/timesync is handled separately. |
-| PTP | clock state, port state, master offset, grandmaster relation | conditional | P3 | bounded-tree | Capture kernel-exposed PTP state where present; protocol support later. |
+| Process summary | `/proc/<pid>/` all safe files | collect-auto | P1 | auto-discover | Full per-process discovery |
+| Process symlinks | `/proc/<pid>/cwd`, `root`, `exe` | collect-auto | P1 | auto-discover | Resolve symlink targets |
+| File descriptors | `/proc/<pid>/fd/*` | collect-auto | P1 | dir-listing | FD inventory with symlink targets |
+| FD info | `/proc/<pid>/fdinfo/*` | conditional | P3 | auto-discover | Valuable but scales with FD count |
+| Namespaces | `/proc/<pid>/ns/*` | collect-auto | P1 | symlink-targets | Namespace relation evidence |
+| Threads | `/proc/<pid>/task/*/` | conditional | P3 | auto-discover | Per-thread status; bounded on large hosts |
+| Process net | `/proc/<pid>/net/*` | collect-auto | P2 | auto-discover | Per-process net namespace |
+| Process mounts | `/proc/<pid>/mounts`, `mountinfo` | collect-auto | P2 | auto-discover | Per-process mount view |
+| Memory maps | `/proc/<pid>/smaps` | limited | P4 | raw-file | Large; selected PIDs only |
+| Memory maps | `/proc/<pid>/smaps_rollup` | collect-auto | P2 | raw-file | Aggregate, lower cost |
+| Memory maps | `/proc/<pid>/maps` | collect-auto | P2 | raw-file | Memory layout |
+| Process memory | `/proc/<pid>/mem` | **blacklist** | NA | skip | Process memory image |
+| Page table | `/proc/<pid>/pagemap` | **blacklist** | NA | skip | Large page table dump |
+| Write interfaces | `clear_refs`, `oom_adj`, `attr/*`, etc. | **blacklist** | NA | skip | Mutate kernel state |
 
-## Crash Dump Store
+---
 
-| Domain | Coverage unit | Decision | Priority | Mode | Rationale |
-|---|---|---:|---:|---|---|
-| User-space core dump | records, crashed process metadata, signal, timestamp, core file metadata | limited | P3 | metadata-only | Do not copy large core payloads by default. |
-| systemd-coredump | coredump record and journal metadata | deferred-native | P3 | native-protocol | Native coredump/journal support required. |
-| Kernel crash dump | kdump state, crash kernel, vmcore metadata, panic records | limited | P3 | metadata-only | Do not copy large vmcore payloads by default. |
-| Recent crash record | recent user-space and kernel crash windows | conditional | P3 | bounded-window | Capture bounded records where native source exists. |
+## 3. /proc/sys — Sysctl
 
-## Hardware Management Interface
-
-| Domain | Coverage unit | Decision | Priority | Mode | Rationale |
-|---|---|---:|---:|---|---|
-| Disk health | health, temperature, media error, lifetime counters | deferred-native | P4 | native-protocol | No `smartctl`; native safe implementation required. |
-| NVMe management | health, SMART log, error log | deferred-native | P4 | native-protocol | No `nvme`; native safe implementation required. |
-| RAID controller | virtual drive, physical drive, rebuild, battery/cache state | deferred-native | P4 | native-protocol | Vendor interfaces require native safe design. |
-| IPMI / BMC / Redfish | chassis power, sensors, fans, PSU, SEL | deferred-native | P4 | native-protocol | No `ipmitool`; native safe implementation required. |
-| GPU management | device, utilization, memory, temperature, process relation | deferred-native | P4 | native-protocol | No vendor CLI; collect sysfs evidence separately. |
-| RDMA / InfiniBand | device, port, counters, congestion counters | conditional | P3 | bounded-tree | Collect Linux-exposed sysfs state; advanced management deferred. |
-| Sensors / thermal / power | temperature, fan, voltage, thermal zone, power state | collect | P2 | bounded-tree | Covered through `/sys/class/hwmon`, thermal, and power_supply. |
-
-## Container Runtime
+**Strategy**: Recursive bounded-depth scan from `/proc/sys/` root. All sysctl
+files are safe read-only text. No blacklist needed.
 
 | Domain | Coverage unit | Decision | Priority | Mode | Rationale |
 |---|---|---|---|---|---|
-| Runtime daemon | daemon state, socket state, version, error state | exclude | P3 | skip | Container daemon API protocol out of scope for kernel-focused collection. |
-| Container object | list, state, lifecycle, exit, restart metadata | exclude | P3 | skip | Container object enumeration protocol out of scope. |
-| Container process | init process, host PID relation, task state | conditional | P3 | raw-file-set | Host-side procfs evidence can be collected before runtime protocol support. |
-| Container resource | CPU, memory, PID, block I/O, network I/O state | conditional | P3 | bounded-tree | Host cgroup evidence first; runtime API later. |
-| Container namespace | PID, network, mount, IPC, UTS namespace relation | conditional | P3 | symlink-targets | Host-side namespace evidence via procfs. |
-| Container cgroup | container cgroup relation | conditional | P3 | bounded-tree | Host cgroup evidence via `/sys/fs/cgroup`. |
-| Container event / log | recent events, stdout window, stderr window | exclude | P3 | skip | Container log protocol out of scope. |
+| Sysctl | `/proc/sys/` full tree | collect-auto | P2 | bounded-tree | Depth ≤ 4, 512 files/level, 64 KiB/file |
+| Kernel params | `/proc/sys/kernel/*` | collect-auto | P2 | bounded-tree | Included in tree walk |
+| VM params | `/proc/sys/vm/*` | collect-auto | P2 | bounded-tree | Included in tree walk |
+| FS params | `/proc/sys/fs/*` | collect-auto | P2 | bounded-tree | Included in tree walk |
+| Net params | `/proc/sys/net/*` | collect-auto | P2 | bounded-tree | Included in tree walk |
+| User params | `/proc/sys/user/*` | collect-auto | P3 | bounded-tree | Included in tree walk |
+| Debug params | `/proc/sys/debug/*` | collect-auto | P3 | bounded-tree | Auto-discovered if present |
+| Dev params | `/proc/sys/dev/*` | collect-auto | P3 | bounded-tree | Auto-discovered if present |
+| ABI params | `/proc/sys/abi/*` | collect-auto | P3 | bounded-tree | Auto-discovered if present |
+
+---
+
+## 4. /sys — Device and kernel object model
+
+**Strategy**: Bounded-depth recursive scan. For each device directory,
+auto-discover all attribute files. Depth ≤ 4, 256 files/level, 1 MiB/file.
+
+**Global blacklist** (write interfaces): `uevent`, `bind`, `unbind`,
+`probe`, `reset`, `trigger`, `store`, `config`
+
+**Additional blacklist** (power): `/sys/power/state`, `/sys/power/disk`
+(may trigger suspend/hibernate)
+
+| Domain | Coverage unit | Decision | Priority | Mode | Rationale |
+|---|---|---|---|---|---|
+| Network devices | `/sys/class/net/*/` | collect-auto | P2 | auto-discover | All interface attributes; blacklist write interfaces |
+| Network devices | `/sys/devices/virtual/net/*/` | collect-auto | P2 | auto-discover | Virtual network devices |
+| Block devices | `/sys/block/*/` | collect-auto | P2 | auto-discover | All disk attributes + queue params |
+| Block devices | `/sys/block/zram*/` | collect-auto | P2 | auto-discover | Compressed RAM block devices |
+| CPU devices | `/sys/devices/system/cpu/*/` | collect-auto | P2 | auto-discover | Topology, cache, freq, idle |
+| CPU vulnerabilities | `/sys/devices/system/cpu/vulnerabilities/` | collect-auto | P0 | auto-discover | **Critical incident evidence** |
+| CPU microcode | `/sys/devices/system/cpu/microcode/` | collect-auto | P2 | auto-discover | Microcode revision |
+| CPU SMT | `/sys/devices/system/cpu/smt/` | collect-auto | P2 | auto-discover | SMT/HyperThreading controls |
+| NUMA | `/sys/devices/system/node/*/` | collect-auto | P2 | auto-discover | NUMA topology and stats |
+| Cgroup | `/sys/fs/cgroup/` | collect-auto | P2 | bounded-tree | Full cgroup tree, all controllers |
+| Kernel modules | `/sys/module/*/` | collect-auto | P2 | auto-discover | Parameters, holders, sections |
+| Kernel state | `/sys/kernel/` | collect-auto | P2 | auto-discover | General kernel runtime state |
+| Kernel MM | `/sys/kernel/mm/*` | collect-auto | P2 | auto-discover | THP, KSM, hugepages, swap, compaction |
+| Kernel livepatch | `/sys/kernel/livepatch/` | collect-auto | P2 | auto-discover | Hot-patch state |
+| Kernel slab | `/sys/kernel/slab/` | collect-auto | P3 | auto-discover | SLAB merging info |
+| Filesystem state | `/sys/fs/*` | collect-auto | P3 | bounded-tree | Per-fs-type stats (btrfs, xfs, ext4, fuse) |
+| Firmware | `/sys/firmware/*` | collect-auto | P3 | bounded-tree | DMI, ACPI, EFI, devicetree |
+| EFI variables | `/sys/firmware/efi/efivars/` | conditional | P4 | metadata | Sensitive; metadata-only |
+| Power | `/sys/power/` safe files | collect-auto | P2 | auto-discover | Power state (excluding state/disk) |
+| HWMON / thermal | `/sys/class/hwmon/*/`, `/sys/class/thermal/*/` | collect-auto | P2 | auto-discover | Sensors, temp, cooling devices |
+| Power supply | `/sys/class/power_supply/*/` | collect-auto | P2 | auto-discover | Battery/PSU state |
+| Graphics | `/sys/class/drm/*/`, `/sys/class/accel/*/` | collect-auto | P3 | auto-discover | GPU/accelerator state |
+| RDMA | `/sys/class/infiniband*/` | collect-auto | P3 | auto-discover | RDMA/IB device state |
+| NVMe | `/sys/class/nvme*/` | collect-auto | P3 | auto-discover | NVMe controller/subsystem |
+| Storage classes | `/sys/class/scsi_*`, `/sys/class/ata_*`, `/sys/class/fc_*`, `/sys/class/sas_*`, `/sys/class/enclosure/*` | collect-auto | P3 | auto-discover | Storage device details |
+| Misc devices | `/sys/class/watchdog`, `/sys/class/rtc`, `/sys/class/input`, `/sys/class/dmi`, `/sys/class/leds`, `/sys/class/backlight` | collect-auto | P3 | auto-discover | Miscellaneous device state |
+| GPIO | `/sys/class/gpio/*/` | collect-auto | P3 | metadata | GPIO metadata only |
+| TTY | `/sys/class/tty/*/`, `/sys/class/vtconsole/*/` | collect-auto | P3 | auto-discover | TTY device state |
+| I2C/SPI | `/sys/class/i2c-*`, `/sys/class/spi_master/*` | collect-auto | P3 | metadata | Bus adapter metadata |
+| Regulator | `/sys/class/regulator/*/` | collect-auto | P3 | auto-discover | Voltage regulator state |
+| Other class | `/sys/class/extcon/*`, `/sys/class/devcoredump/*`, `/sys/class/devlink/*`, `/sys/class/pci_bus/*`, `/sys/class/mei/*`, `/sys/class/mic/*`, `/sys/class/uwb_rc/*`, `/sys/class/wmi_bus/*` | conditional | P3 | auto-discover | Auto-discovered if present |
+| DebugFS | `/sys/kernel/debug/` | limited | P4 | bounded-tree | Selected safe subtrees only |
+| TraceFS | `/sys/kernel/tracing/` | limited | P4 | bounded-tree | Read existing state; do not enable |
+| BPF filesystem | `/sys/fs/bpf/` | limited | P4 | metadata | Pinned object metadata only |
+| SecurityFS | `/sys/kernel/security/` | collect-auto | P3 | bounded-tree | LSM, IMA, EVM, lockdown |
+| ConfigFS | `/sys/kernel/config/` | conditional | P3 | metadata | Dynamic config metadata |
+| Pstore | `/sys/fs/pstore/` | collect-auto | P2 | bounded-tree | Crash evidence — high value |
+| Virtualization | `/sys/hypervisor/`, `/sys/devices/virtual/` | collect-auto | P3 | bounded-tree | Hypervisor/VM evidence |
+| KVM | `/sys/module/kvm*/parameters/` | collect-auto | P3 | auto-discover | KVM module state |
+| IOMMU | `/sys/kernel/iommu_groups/`, `/sys/class/iommu/*/` | collect-auto | P3 | auto-discover | IOMMU topology |
+| Bus/devices | `/sys/bus/*/devices/`, `/sys/devices/` | limited | P4 | bounded-tree | Very large; strict bounds |
+| EDAC | `/sys/devices/system/edac/` | collect-auto | P2 | auto-discover | Memory error counters |
+| MCE | `/sys/devices/system/machinecheck/` | collect-auto | P2 | auto-discover | Machine check exceptions |
+
+---
+
+## 5. /run
+
+**Strategy**: Scan `/run` root for discrete files → collect all. Subdirectories
+with bounded depth (3) and file count (64/level). Socket files → metadata only.
+
+No blacklist needed for `/run` — all regular files are safe. Socket files,
+FIFO files, and unusually large trees are bounded by the traversal limits.
+
+| Domain | Coverage unit | Decision | Priority | Mode | Rationale |
+|---|---|---|---|---|---|
+| systemd runtime | `/run/systemd/` | collect-auto | P3 | bounded-tree | Service manager runtime |
+| User runtime | `/run/user/*/` | collect-auto | P3 | bounded-tree | Per-user runtime; depth-limited |
+| Locks | `/run/lock/` | collect-auto | P2 | bounded-tree | Active lock evidence |
+| PID files | `/run/*.pid` | collect-auto | P2 | auto-discover | Daemon PID evidence |
+| udev runtime | `/run/udev/` | collect-auto | P3 | bounded-tree | Device runtime state |
+| D-Bus runtime | `/run/dbus/` | collect-auto | P3 | metadata | Socket presence only |
+| Resolver | `/run/systemd/resolve/` | collect-auto | P3 | bounded-tree | DNS resolver state |
+| Login records | `/run/utmp` | collect-auto | P3 | raw-file | Login session records |
+| Login failures | `/run/faillock/` | collect-auto | P3 | bounded-tree | Failed login records |
+| User mounts | `/run/mount/utab` | collect-auto | P3 | raw-file | User mount table |
+| NetworkManager | `/run/NetworkManager/` | conditional | P3 | bounded-tree | NM runtime state if present |
+| chrony | `/run/chrony/` | conditional | P3 | bounded-tree | chrony runtime state if present |
+| Application sockets | `/run/docker.sock`, `/run/containerd/`, `/run/crio/`, `/run/runc/`, `/run/podman/`, `/run/kata-containers/`, `/run/gvisor/` | **exclude** | NA | skip | Application-layer container engines; not Linux system runtime |
+
+---
+
+## 6. /dev
+
+**Strategy**: Metadata-only — device node listings, symlink targets,
+major/minor numbers, permissions, file types. Do not read device contents.
+
+**Absolute blacklist**: `/dev/cpu/*/msr`, `/dev/mem`, `/dev/kmem`,
+`/dev/port`, `/dev/watchdog*`, `/dev/sg*`, `/dev/bsg/*`
+
+| Domain | Coverage unit | Decision | Priority | Mode | Rationale |
+|---|---|---|---|---|---|
+| Device nodes | `/dev/` top-level | collect-auto | P2 | metadata | Dir listing + metadata for all entries |
+| Block symlinks | `/dev/block/`, `/dev/disk/`, `/dev/mapper/` | collect-auto | P2 | symlink-targets | Persistent device identifiers |
+| Loop devices | `/dev/loop*` | collect-auto | P2 | metadata | Loop metadata only |
+| FUSE device | `/dev/fuse` | collect-auto | P2 | metadata | Availability metadata |
+| TTY/PTY | `/dev/tty*`, `/dev/pts/` | collect-auto | P3 | metadata | Terminal inventory; no stream reads |
+| RNG | `/dev/random`, `/dev/urandom` | collect-auto | P2 | metadata | Metadata only |
+| kmsg | `/dev/kmsg` | collect | P0 | bounded-window | Routed to kernel ring buffer collector |
+| Pseudo devices | `/dev/null`, `/dev/zero`, `/dev/full`, `/dev/console`, `/dev/tty` | collect-auto | P2 | metadata | Metadata only |
+| KVM | `/dev/kvm` | collect-auto | P3 | metadata | KVM availability metadata |
+| VFIO | `/dev/vfio/*` | collect-auto | P3 | metadata | VFIO metadata only |
+| vhost | `/dev/vhost*` | collect-auto | P3 | metadata | vhost metadata only |
+| uinput/uhid | `/dev/uinput`, `/dev/uhid` | collect-auto | P3 | metadata | Input device metadata |
+| MSR | `/dev/cpu/*/msr` | **blacklist** | NA | skip | Model-Specific Register access |
+| Physical memory | `/dev/mem`, `/dev/kmem`, `/dev/port` | **blacklist** | NA | skip | Memory/port access |
+| Watchdog | `/dev/watchdog*` | **blacklist** | NA | skip | Opening starts watchdog timer |
+| SCSI generic | `/dev/sg*`, `/dev/bsg/*` | **blacklist** | NA | skip | Can send arbitrary SCSI commands |
+
+---
+
+## 7. Kernel Ring Buffer
+
+| Domain | Coverage unit | Decision | Priority | Mode | Rationale |
+|---|---|---|---|---|---|
+| kmsg window | `/dev/kmsg` non-blocking read | collect | P0 | bounded-window | 2 MiB, 500ms timeout, non-blocking |
+| dmesg restrict | `/proc/sys/kernel/dmesg_restrict` | collect-auto | P0 | raw-file | Discovered in sysctl scan |
+
+---
+
+## 8. System Event Log Store
+
+| Domain | Coverage unit | Decision | Priority | Mode | Rationale |
+|---|---|---|---|---|---|
+| journald (run) | `/run/log/journal/*/` | conditional | P3 | bounded-window | Bounded file window; if present |
+| journald (var) | `/var/log/journal/*/` | conditional | P3 | bounded-window | Bounded file window; if present |
+| syslog | `/var/log/syslog` | conditional | P3 | bounded-window | If present; 256 KiB window |
+| messages | `/var/log/messages` | conditional | P3 | bounded-window | If present |
+| kern.log | `/var/log/kern.log` | conditional | P3 | bounded-window | If present |
+| auth.log | `/var/log/auth.log` | conditional | P3 | bounded-window | If present |
+| dmesg log | `/var/log/dmesg` | conditional | P3 | bounded-window | If present |
+| lastlog | `/var/log/lastlog` | conditional | P3 | bounded-window | If present |
+
+---
+
+## 9. Service Manager
+
+| Domain | Coverage unit | Decision | Priority | Mode | Rationale |
+|---|---|---|---|---|---|
+| Manager state | D-Bus Manager properties | collect | P3 | native-protocol | Version, features, architecture, cgroup |
+| Unit list | D-Bus ListUnits | collect | P3 | native-protocol | All unit state summary |
+| Unit details | D-Bus GetUnit + GetUnitFileState | collect | P3 | native-protocol | Per-unit state |
+| Failed state | D-Bus ListUnitsFiltered | collect | P3 | native-protocol | Failed/degraded units |
+| Jobs | D-Bus ListJobs | collect | P3 | native-protocol | Pending jobs |
+
+---
+
+## 10. Netlink
+
+**Strategy**: Auto-probe known netlink families; attempt dump; unsupported
+families marked explicitly.
+
+| Domain | Coverage unit | Decision | Priority | Mode | Rationale |
+|---|---|---|---|---|---|
+| Link | `RTM_GETLINK` | collect | P2 | native-netlink | Interface inventory |
+| Address | `RTM_GETADDR` | collect | P2 | native-netlink | IP address state |
+| Route | `RTM_GETROUTE` | collect | P2 | native-netlink | Routing table |
+| Neighbor | `RTM_GETNEIGH` | collect | P2 | native-netlink | ARP/NDP cache |
+| Socket diagnostic | `NETLINK_SOCK_DIAG` | conditional | P3 | native-netlink | Socket state; can be large |
+| Conntrack | `NETLINK_NETFILTER` CT | conditional | P3 | native-netlink | Connection tracking |
+| Traffic control | `RTM_GETQDISC` etc. | conditional | P3 | native-netlink | Qdisc/class/filter state |
+| XFRM | `NETLINK_XFRM` | conditional | P3 | native-netlink | IPsec state |
+| nftables | `NETLINK_NETFILTER` nft | conditional | P3 | native-netlink | nftables ruleset |
+| Crypto | `NETLINK_CRYPTO` | conditional | P3 | native-netlink | Kernel crypto users |
+| RDMA | `NETLINK_RDMA` | conditional | P3 | native-netlink | RDMA device state |
+| NVMe-oF | `NETLINK_NVME` | conditional | P3 | native-netlink | NVMe over Fabrics |
+| TIPC | `NETLINK_TIPC` | conditional | P3 | native-netlink | Transparent IPC |
+| SMC | `NETLINK_SMC` | conditional | P3 | native-netlink | SMC monitoring |
+| Other families | Auto-probed | conditional | P3 | native-netlink | Mark unsupported if probe fails |
+
+---
+
+## 11. Security / Audit Subsystem
+
+| Domain | Coverage unit | Decision | Priority | Mode | Rationale |
+|---|---|---|---|---|---|
+| Process security | `/proc/<pid>/status` caps, seccomp | collect-auto | P1 | auto-discover | Part of process scan |
+| SELinux | `/sys/fs/selinux/` | collect-auto | P3 | bounded-tree | If SELinux is active |
+| AppArmor | `/sys/kernel/security/apparmor/` | conditional | P3 | bounded-tree | If AppArmor is active |
+| Audit login | `/proc/self/loginuid`, `sessionid` | collect-auto | P3 | raw-file | Audit session identity |
+| IMA | `/sys/kernel/security/ima/` | conditional | P3 | bounded-tree | If IMA is active |
+| EVM | `/sys/kernel/security/evm/` | conditional | P3 | bounded-tree | If EVM is active |
+| Lockdown | `/sys/kernel/security/lockdown` | collect-auto | P3 | raw-file | Kernel lockdown level |
+| Landlock | Process status detection | collect-auto | P3 | auto-discover | Detected in process scan |
+
+---
+
+## 12. User / Session Database
+
+| Domain | Coverage unit | Decision | Priority | Mode | Rationale |
+|---|---|---|---|---|---|
+| logind sessions | D-Bus ListSessions/ListUsers/GetSession | collect | P3 | native-protocol | Active session state |
+| Login records | `/run/utmp` | collect-auto | P3 | raw-file | Traditional login records |
+
+---
+
+## 13. Scheduler / Job Runtime
+
+| Domain | Coverage unit | Decision | Priority | Mode | Rationale |
+|---|---|---|---|---|---|
+| systemd timers | D-Bus ListUnits (type=timer) | collect | P3 | native-protocol | Timer state via service manager |
+| Cron | `/var/spool/cron/crontabs/`, `/var/spool/cron/atjobs/` | conditional | P3 | bounded-tree | If cron is present |
+| Anacron | `/var/spool/anacron/` | conditional | P3 | bounded-tree | If anacron is present |
+| At jobs | `/var/spool/at/` | conditional | P3 | bounded-tree | If at is present |
+| fcron | `/var/spool/fcron/` | conditional | P3 | bounded-tree | If fcron is present |
+
+---
+
+## 14. Time Synchronization Subsystem
+
+| Domain | Coverage unit | Decision | Priority | Mode | Rationale |
+|---|---|---|---|---|---|
+| System clock | `/proc/uptime`, `/proc/stat` (btime) | collect-auto | P0 | auto-discovered | Essential capture context |
+| Local time | `/etc/localtime`, `/etc/timezone` | collect-auto | P2 | symlink/raw | Timezone evidence |
+| Adjtime | `/etc/adjtime` | conditional | P2 | raw-file | Clock drift/status |
+| systemd-timesyncd | `/run/systemd/timesync/` | conditional | P3 | bounded-tree | If present |
+| Clock source | `/sys/devices/system/clocksource/clocksource0/` | collect-auto | P2 | auto-discover | Active/available clock sources |
+| PTP | `/sys/class/ptp/*/` | conditional | P3 | auto-discover | PTP hardware clocks |
+
+---
+
+## 15. Crash Dump Store
+
+| Domain | Coverage unit | Decision | Priority | Mode | Rationale |
+|---|---|---|---|---|---|
+| kdump | `/sys/kernel/kexec_crash_*` | collect-auto | P3 | auto-discover | Kdump state |
+| Core pattern | `/proc/sys/kernel/core_pattern` | collect-auto | P3 | auto-discover | Part of sysctl scan |
+| Core dump dir | `/var/lib/systemd/coredump/` | conditional | P3 | dir-listing | Metadata only; no large core files |
+| Pstore | `/sys/fs/pstore/` | collect-auto | P2 | bounded-tree | Crash panic records |
+| Crash dir | `/var/crash/` | conditional | P3 | metadata | Distribution crash dir; metadata only |
+
+---
+
+## 16. Hardware Management Interface
+
+| Domain | Coverage unit | Decision | Priority | Mode | Rationale |
+|---|---|---|---|---|---|
+| Sensors | `/sys/class/hwmon/*/`, `/sys/class/thermal/*/` | collect-auto | P2 | auto-discover | Sensor/thermal state |
+| Disk health | `/sys/block/*/device/` SCSI/SAS attrs | collect-auto | P3 | auto-discover | Disk device attributes |
+| IDE legacy | `/proc/ide/*/` | conditional | P3 | metadata | Old IDE systems |
+| MD RAID | `/proc/mdstat` | collect-auto | P2 | raw-file | Software RAID state |
+| IPMI device | `/dev/ipmi*` | conditional | P3 | metadata | IPMI device presence |
+| NVMe mgmt | NVMe admin commands | deferred-native | P4 | native-protocol | Requires safe NVMe interface |
+| RAID mgmt | MegaRAID/PERC | deferred-native | P4 | native-protocol | Requires vendor interface |
+| IPMI content | IPMI commands | deferred-native | P4 | native-protocol | Requires safe IPMI interface |
+| GPU vendor | NVIDIA/AMD proprietary | deferred-native | P4 | native-protocol | Requires vendor interface |
+
+---
 
 ## Explicit Exclusions
 
-The following are outside the core capture target even when present on a host:
+These are outside the core Linux runtime snapshot boundary:
 
-| Exclusion | Decision | Priority | Mode | Rationale |
-|---|---:|---:|---|---|
-| Static system configuration files as a primary target | exclude | NA | skip | Outside runtime raw snapshot scope. |
-| Application configuration and business data | exclude | NA | skip | Application/business scope, not Linux runtime evidence. |
-| Source code files and package manager databases | exclude | NA | skip | Static host content, not incident runtime state. |
-| Container image contents | exclude | NA | skip | Image artifact scope, not local runtime state. |
-| Database internal runtime state | exclude | NA | skip | Database-specific tooling scope. |
-| Language runtime internals such as JVM, Go, Python, Node.js, .NET, BEAM | exclude | NA | skip | Language-specific tooling scope. |
-| Application debug endpoints and application metrics systems | exclude | NA | skip | Application observability scope. |
-| Kubernetes API and orchestration control-plane state | exclude | NA | skip | Orchestration control-plane scope. |
-| Cloud provider control-plane APIs | exclude | NA | skip | Cloud control-plane scope. |
-| Full long-term historical logs | exclude | NA | skip | Unbounded and outside incident snapshot scope; bounded windows only. |
-| External command output | exclude | NA | skip | Violates native Rust collection policy. |
-| Large core, vmcore, or kernel memory payloads by default | exclude | NA | skip | Too large and risky for incident-time capture; metadata only. |
+| Exclusion | Decision | Rationale |
+|---|---|---|
+| Static system configuration files | exclude | Not runtime state |
+| Application configuration and business data | exclude | Application scope |
+| Source code and package manager databases | exclude | Static content |
+| Application runtime sockets (Docker, containerd, etc.) | exclude | Application-layer, not Linux system runtime |
+| Database internal runtime state | exclude | Database-specific scope |
+| Language runtime internals (JVM, Go, Python, etc.) | exclude | Language-specific scope |
+| Application debug endpoints and metrics | exclude | Application observability scope |
+| Kubernetes API / orchestration state | exclude | Orchestration control-plane scope |
+| Cloud provider control-plane APIs | exclude | Cloud control-plane scope |
+| Full long-term historical logs | exclude | Unbounded; bounded windows only |
+| External command output | exclude | Violates native Rust collection policy |
+| Large core/vmcore/kernel memory payloads | exclude | Too large/risky; metadata only |
+| `/proc/kcore`, `/proc/kallsyms` | exclude | Security-sensitive; blacklisted |
+| `/proc/<pid>/mem`, `/proc/<pid>/pagemap` | exclude | Memory image/table dumps; blacklisted |
+| `/dev/mem`, `/dev/kmem`, `/dev/port` | exclude | Memory/port access; blacklisted |
+| `/dev/watchdog*` | exclude | Opens start watchdog; blacklisted |
+| `/dev/sg*`, `/dev/bsg/*` | exclude | SCSI generic commands; blacklisted |
+| `/dev/cpu/*/msr` | exclude | MSR access; blacklisted |
+| `/proc/sysrq-trigger` | exclude | Write interface; blacklisted |
+| Write interfaces (`bind`, `unbind`, `probe`, etc.) | exclude | Mutate kernel state; blacklisted |
+
+---
 
 ## Review Rules
 
@@ -381,3 +467,4 @@ Before a design baseline is considered complete, every row must answer:
 - What priority applies if it can run?
 - What storage or collection mode applies?
 - Why does the decision preserve forensic value without violating safety policy?
+- What blacklist entries apply (for auto-discover domains)?

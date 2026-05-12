@@ -522,7 +522,6 @@ name = "runfossil-cli"
 version = "0.1.0"
 dependencies = [
  "nix",
- "runfossil-container",
  "runfossil-core",
  "runfossil-net",
  "runfossil-pack",
@@ -533,16 +532,6 @@ dependencies = [
  "tar",
  "tempfile",
  "zstd",
-]
-
-[[package]]
-name = "runfossil-container"
-version = "0.1.0"
-dependencies = [
- "runfossil-core",
- "runfossil-fs",
- "runfossil-store",
- "tempfile",
 ]
 
 [[package]]

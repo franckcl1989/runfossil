@@ -553,11 +553,6 @@ fn capture_task_list() -> Vec<CaptureTask> {
             collector: runfossil_proc::collect_scheduler,
             priority: 3,
         },
-        CaptureTask {
-            name: "container",
-            collector: runfossil_container::collect_container,
-            priority: 3,
-        },
     ]
 }
 

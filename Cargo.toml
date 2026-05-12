@@ -2,7 +2,6 @@
 members = [
     "crates/runfossil-cli",
     "crates/runfossil-core",
-    "crates/runfossil-container",
     "crates/runfossil-fs",
     "crates/runfossil-net",
     "crates/runfossil-pack",

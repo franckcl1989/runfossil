@@ -12,7 +12,6 @@ name = "runfossil"
 path = "src/main.rs"
 
 [dependencies]
-runfossil-container = { path = "../runfossil-container" }
 runfossil-core = { path = "../runfossil-core" }
 runfossil-net = { path = "../runfossil-net" }
 runfossil-pack = { path = "../runfossil-pack" }

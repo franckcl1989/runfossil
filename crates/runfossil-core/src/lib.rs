@@ -68,8 +68,6 @@ pub enum SourceSlug {
     Crash,
     /// Hardware management interface.
     Hardware,
-    /// Container runtime.
-    Container,
 }
 
 impl SourceSlug {
@@ -91,7 +89,6 @@ impl SourceSlug {
             Self::Time => "time",
             Self::Crash => "crash",
             Self::Hardware => "hardware",
-            Self::Container => "container",
         }
     }
 
@@ -113,7 +110,6 @@ impl SourceSlug {
             Self::Time,
             Self::Crash,
             Self::Hardware,
-            Self::Container,
         ]
     }
 }
@@ -401,7 +397,7 @@ mod tests {
         );
         assert_eq!(Priority::NotApplicable.as_str(), "NA");
         assert_eq!(ObjectKind::NativeDump.as_str(), "native_dump");
-        assert_eq!(SourceSlug::Container.as_str(), "container");
+        assert_eq!(SourceSlug::Hardware.as_str(), "hardware");
     }
 
     #[test]
@@ -492,8 +488,8 @@ mod tests {
     }
 
     #[test]
-    fn source_slug_all_returns_fifteen_variants() {
-        assert_eq!(SourceSlug::all().len(), 15);
+    fn source_slug_all_returns_fourteen_variants() {
+        assert_eq!(SourceSlug::all().len(), 14);
     }
 
     #[test]

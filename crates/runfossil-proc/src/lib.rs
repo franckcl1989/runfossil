@@ -13,7 +13,9 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use runfossil_core::{ManifestStatus, ObjectKind, SourceSlug};
-use runfossil_fs::{BoundedReadLimits, BoundedTraversalLimits, FsError, ListResult};
+use runfossil_fs::{
+    AutoDiscoverConfig, BoundedReadLimits, BoundedTraversalLimits, FsError, ListResult,
+};
 use runfossil_fs::{list_dir_entries, read_file_bounded, read_link_bounded};
 use runfossil_store::{
     ErrorLogEntry, HashRecord, ManifestEntry, ObjectLimits, SHA256_MAX_BYTES, SnapshotStore,
@@ -26,249 +28,10 @@ pub const fn source() -> SourceSlug {
     SourceSlug::Proc
 }
 
-/// A single procfs file target with collection metadata.
-struct ProcTarget {
-    source_path: PathBuf,
-    domain: &'static str,
-    object: &'static str,
-    kind: ObjectKind,
-}
-
-/// P0 global /proc files: low-cost, high-value system overview.
-fn p0_global_targets() -> Vec<ProcTarget> {
-    let mut targets = Vec::new();
-
-    target(
-        &mut targets,
-        "system",
-        "loadavg",
-        "loadavg",
-        ObjectKind::File,
-    );
-    target(&mut targets, "system", "uptime", "uptime", ObjectKind::File);
-    target(
-        &mut targets,
-        "system",
-        "version",
-        "version",
-        ObjectKind::File,
-    );
-    target(
-        &mut targets,
-        "system",
-        "cmdline",
-        "cmdline",
-        ObjectKind::File,
-    );
-    target(&mut targets, "cpu", "cpuinfo", "cpuinfo", ObjectKind::File);
-    target(&mut targets, "memory", "swaps", "swaps", ObjectKind::File);
-    target(&mut targets, "cpu", "stat", "stat", ObjectKind::File);
-    target(
-        &mut targets,
-        "cpu",
-        "schedstat",
-        "schedstat",
-        ObjectKind::File,
-    );
-    target(
-        &mut targets,
-        "memory",
-        "meminfo",
-        "meminfo",
-        ObjectKind::File,
-    );
-    target(&mut targets, "memory", "vmstat", "vmstat", ObjectKind::File);
-    target(
-        &mut targets,
-        "pressure",
-        "cpu",
-        "pressure/cpu",
-        ObjectKind::File,
-    );
-    target(
-        &mut targets,
-        "pressure",
-        "memory",
-        "pressure/memory",
-        ObjectKind::File,
-    );
-    target(
-        &mut targets,
-        "pressure",
-        "io",
-        "pressure/io",
-        ObjectKind::File,
-    );
-    target(
-        &mut targets,
-        "interrupt",
-        "interrupts",
-        "interrupts",
-        ObjectKind::File,
-    );
-    target(
-        &mut targets,
-        "interrupt",
-        "softirqs",
-        "softirqs",
-        ObjectKind::File,
-    );
-    target(
-        &mut targets,
-        "block",
-        "diskstats",
-        "diskstats",
-        ObjectKind::File,
-    );
-    target(
-        &mut targets,
-        "block",
-        "partitions",
-        "partitions",
-        ObjectKind::File,
-    );
-    target(
-        &mut targets,
-        "filesystem",
-        "mounts",
-        "mounts",
-        ObjectKind::File,
-    );
-    target(
-        &mut targets,
-        "filesystem",
-        "mountinfo",
-        "self/mountinfo",
-        ObjectKind::File,
-    );
-    target(
-        &mut targets,
-        "filesystem",
-        "filesystems",
-        "filesystems",
-        ObjectKind::File,
-    );
-    target(
-        &mut targets,
-        "kernel",
-        "modules",
-        "modules",
-        ObjectKind::File,
-    );
-
-    net_target(&mut targets, "tcp");
-    net_target(&mut targets, "tcp6");
-    net_target(&mut targets, "udp");
-    net_target(&mut targets, "udp6");
-    net_target(&mut targets, "unix");
-    net_target(&mut targets, "raw");
-    net_target(&mut targets, "packet");
-    net_target(&mut targets, "dev");
-    net_target(&mut targets, "snmp");
-    net_target(&mut targets, "netstat");
-    net_target(&mut targets, "arp");
-    net_target(&mut targets, "route");
-    net_target(&mut targets, "ipv6_route");
-
-    targets
-}
-
-/// P2 limited /proc files.
-fn p2_limited_targets() -> Vec<ProcTarget> {
-    let mut targets = Vec::new();
-
-    target(
-        &mut targets,
-        "memory",
-        "slabinfo",
-        "slabinfo",
-        ObjectKind::File,
-    );
-    target(
-        &mut targets,
-        "memory",
-        "zoneinfo",
-        "zoneinfo",
-        ObjectKind::File,
-    );
-    target(
-        &mut targets,
-        "memory",
-        "buddyinfo",
-        "buddyinfo",
-        ObjectKind::File,
-    );
-    target(&mut targets, "kernel", "locks", "locks", ObjectKind::File);
-    target(&mut targets, "ipc", "shm", "sysvipc/shm", ObjectKind::File);
-    target(&mut targets, "ipc", "msg", "sysvipc/msg", ObjectKind::File);
-    target(&mut targets, "ipc", "sem", "sysvipc/sem", ObjectKind::File);
-    target(&mut targets, "hardware", "iomem", "iomem", ObjectKind::File);
-    target(
-        &mut targets,
-        "hardware",
-        "ioports",
-        "ioports",
-        ObjectKind::File,
-    );
-    target(
-        &mut targets,
-        "hardware",
-        "devices",
-        "devices",
-        ObjectKind::File,
-    );
-    target(&mut targets, "hardware", "misc", "misc", ObjectKind::File);
-    target(
-        &mut targets,
-        "hardware",
-        "cgroups",
-        "cgroups",
-        ObjectKind::File,
-    );
-    target(&mut targets, "crypto", "crypto", "crypto", ObjectKind::File);
-    target(
-        &mut targets,
-        "crypto",
-        "key-users",
-        "key-users",
-        ObjectKind::File,
-    );
-    target(
-        &mut targets,
-        "filesystem",
-        "mountstats",
-        "self/mountstats",
-        ObjectKind::File,
-    );
-
-    net_target(&mut targets, "dev_mcast");
-    net_target(&mut targets, "igmp");
-    net_target(&mut targets, "igmp6");
-
-    targets
-}
-
-fn target(
-    targets: &mut Vec<ProcTarget>,
-    domain: &'static str,
-    object: &'static str,
-    relative: &str,
-    kind: ObjectKind,
-) {
-    targets.push(ProcTarget {
-        source_path: Path::new("/proc").join(relative),
-        domain,
-        object,
-        kind,
-    });
-}
-
-fn net_target(targets: &mut Vec<ProcTarget>, name: &'static str) {
-    let relative = format!("net/{name}");
-    target(targets, "net", name, &relative, ObjectKind::File);
-}
-
-/// P1 per-process files.
+/// P1 per-process files. These are the stable per-process attributes
+/// that almost all Linux kernels expose. They are collected via
+/// auto-discovery from each `/proc/<pid>/` directory in addition to
+/// anything else found there (excluding the blacklist).
 struct ProcPerProcess {
     name: &'static str,
     relative: &'static str,
@@ -377,57 +140,82 @@ fn p1_process_targets() -> Vec<ProcPerProcess> {
 
 /// Collects all /proc evidence into the given store.
 ///
+/// Uses auto-discovery: scans `/proc` root for global files, `/proc/net` for
+/// network protocol state, and `/proc/<pid>/` for per-process evidence. A
+/// blacklist excludes known-dangerous or write-interface paths.
+///
 /// On live hosts, this requires root permissions for most files. Non-root
 /// invocation will produce many `permission_denied` entries.
 pub fn collect_proc(store: &mut SnapshotStore) -> Result<(), StoreError> {
-    collect_p0_globals(store)?;
-    collect_p2_limited(store)?;
+    collect_proc_globals_auto(store)?;
+    collect_proc_net_auto(store)?;
     collect_p1_processes(store)?;
-    collect_p3_netfilter(store)?;
     collect_proc_sys(store)?;
     Ok(())
 }
 
-fn collect_p3_netfilter(store: &mut SnapshotStore) -> Result<(), StoreError> {
-    let netfilter_dir = Path::new("/proc/net/netfilter");
-    if !netfilter_dir.exists() {
-        return Ok(());
-    }
+fn collect_proc_globals_auto(store: &mut SnapshotStore) -> Result<(), StoreError> {
+    let proc_dir = Path::new("/proc");
+    let config = AutoDiscoverConfig::proc_global();
+    let limits = BoundedTraversalLimits::new(config.max_files_per_level, 0, config.timeout_ms);
+    let read_limits = BoundedReadLimits::new(config.max_bytes_per_file, config.timeout_ms);
 
-    let limits = BoundedTraversalLimits::new(64, 1, 200);
-    let read_limits = BoundedReadLimits::new(65_536, 200);
-
-    let listing = match list_dir_entries(netfilter_dir, limits) {
-        Ok(listing) => listing,
+    let listing = match list_dir_entries(proc_dir, limits) {
+        Ok(l) => l,
         Err(error) => {
-            let status = fs_error_to_manifest_status(&error);
-            let entry = ManifestEntry::new(
-                "proc.net.netfilter.status",
-                SourceSlug::Proc,
-                "net",
-                "netfilter/status",
-                ObjectKind::Metadata,
-                status,
-            )
-            .with_reason(error.to_string())
-            .with_limits(ObjectLimits::new(0, limits.timeout_ms, 1, 0));
-
-            store.record_object(entry)?;
+            store.log_error(
+                &ErrorLogEntry::new(
+                    now_ns(),
+                    None::<String>,
+                    ManifestStatus::IoError,
+                    format!("failed to list /proc: {error}"),
+                )
+                .with_source(SourceSlug::Proc)
+                .with_path("/proc"),
+            )?;
             return Ok(());
         }
     };
 
     for entry in &listing.entries {
+        // Skip PID-named directories (numeric names)
+        if entry.is_dir
+            && entry
+                .name
+                .as_bytes()
+                .first()
+                .is_some_and(|b| b.is_ascii_digit())
+        {
+            continue;
+        }
+        // Skip known subdirectories (handled separately)
         if entry.is_dir {
             continue;
         }
+        // Skip blacklisted entries
+        if config.is_blacklisted(&entry.name) {
+            continue;
+        }
 
-        let source_path = netfilter_dir.join(&entry.name);
+        let source_path = proc_dir.join(&entry.name);
+        let started = now_ns();
+
         match read_file_bounded(&source_path, read_limits) {
             Ok(result) => {
                 let out_path = output_path(&source_path);
                 let bytes = result.content.len() as u64;
+                let finished = now_ns();
+
                 store.write_raw_file(&out_path, &result.content)?;
+
+                let hash = if bytes <= SHA256_MAX_BYTES {
+                    Some(HashRecord::new(
+                        "sha256",
+                        compute_sha256_hex(&result.content),
+                    ))
+                } else {
+                    None
+                };
 
                 let status = if result.was_truncated {
                     ManifestStatus::Truncated
@@ -435,16 +223,17 @@ fn collect_p3_netfilter(store: &mut SnapshotStore) -> Result<(), StoreError> {
                     ManifestStatus::Captured
                 };
 
-                let manifest_entry = ManifestEntry::new(
-                    format!("proc.net.netfilter.{}", entry.name),
+                let mut entry = ManifestEntry::new(
+                    format!("proc.global.{}", entry.name),
                     SourceSlug::Proc,
-                    "net",
-                    format!("netfilter/{}", entry.name),
+                    "global",
+                    &entry.name,
                     ObjectKind::File,
                     status,
                 )
                 .with_path(out_path.to_string_lossy())
                 .with_bytes(bytes)
+                .with_timing(started, finished, 0)
                 .with_limits(ObjectLimits::new(
                     read_limits.max_bytes,
                     read_limits.timeout_ms,
@@ -452,9 +241,150 @@ fn collect_p3_netfilter(store: &mut SnapshotStore) -> Result<(), StoreError> {
                     0,
                 ));
 
-                store.record_object(manifest_entry)?;
+                if let Some(h) = hash {
+                    entry = entry.with_hash(h);
+                }
+
+                store.record_object(entry)?;
             }
-            Err(_error) => {}
+            Err(error) => {
+                let status = fs_error_to_manifest_status(&error);
+                let entry = ManifestEntry::new(
+                    format!("proc.global.{}", entry.name),
+                    SourceSlug::Proc,
+                    "global",
+                    &entry.name,
+                    ObjectKind::File,
+                    status,
+                )
+                .with_reason(error.to_string())
+                .with_limits(ObjectLimits::new(
+                    read_limits.max_bytes,
+                    read_limits.timeout_ms,
+                    1,
+                    0,
+                ));
+
+                store.record_object(entry)?;
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn collect_proc_net_auto(store: &mut SnapshotStore) -> Result<(), StoreError> {
+    let net_dir = Path::new("/proc/net");
+    if !net_dir.exists() {
+        return Ok(());
+    }
+
+    let config = AutoDiscoverConfig::proc_net();
+    let limits = BoundedTraversalLimits::new(config.max_files_per_level, 1, config.timeout_ms);
+    let read_limits = BoundedReadLimits::new(config.max_bytes_per_file, config.timeout_ms);
+
+    let listing = match list_dir_entries(net_dir, limits) {
+        Ok(l) => l,
+        Err(_) => return Ok(()),
+    };
+
+    for entry in &listing.entries {
+        if entry.is_dir {
+            // Handle subdirectories like netfilter, mptcp_net, sctp, etc.
+            let sub_dir = net_dir.join(&entry.name);
+            if let Ok(sub_listing) = list_dir_entries(&sub_dir, limits) {
+                for sub_entry in &sub_listing.entries {
+                    if sub_entry.is_dir {
+                        continue;
+                    }
+                    collect_single_file(
+                        store,
+                        &sub_dir.join(&sub_entry.name),
+                        SourceSlug::Proc,
+                        "net",
+                        &format!("{}/{}", entry.name, sub_entry.name),
+                        read_limits,
+                    )?;
+                }
+            }
+            continue;
+        }
+
+        collect_single_file(
+            store,
+            &net_dir.join(&entry.name),
+            SourceSlug::Proc,
+            "net",
+            &entry.name,
+            read_limits,
+        )?;
+    }
+
+    Ok(())
+}
+
+fn collect_single_file(
+    store: &mut SnapshotStore,
+    source_path: &Path,
+    source: SourceSlug,
+    domain: &str,
+    object_name: &str,
+    limits: BoundedReadLimits,
+) -> Result<(), StoreError> {
+    match read_file_bounded(source_path, limits) {
+        Ok(result) => {
+            let out_path = output_path(source_path);
+            let bytes = result.content.len() as u64;
+
+            store.write_raw_file(&out_path, &result.content)?;
+
+            let hash = if bytes <= SHA256_MAX_BYTES {
+                Some(HashRecord::new(
+                    "sha256",
+                    compute_sha256_hex(&result.content),
+                ))
+            } else {
+                None
+            };
+
+            let status = if result.was_truncated {
+                ManifestStatus::Truncated
+            } else {
+                ManifestStatus::Captured
+            };
+
+            let mut entry = ManifestEntry::new(
+                format!("proc.{domain}.{object_name}"),
+                source,
+                domain,
+                object_name,
+                ObjectKind::File,
+                status,
+            )
+            .with_path(out_path.to_string_lossy())
+            .with_bytes(bytes)
+            .with_limits(ObjectLimits::new(limits.max_bytes, limits.timeout_ms, 1, 0));
+
+            if let Some(h) = hash {
+                entry = entry.with_hash(h);
+            }
+
+            store.record_object(entry)?;
+        }
+        Err(error) => {
+            let status = fs_error_to_manifest_status(&error);
+            let entry = ManifestEntry::new(
+                format!("proc.{domain}.{object_name}"),
+                source,
+                domain,
+                object_name,
+                ObjectKind::File,
+                status,
+            )
+            .with_reason(error.to_string())
+            .with_limits(ObjectLimits::new(limits.max_bytes, limits.timeout_ms, 1, 0));
+
+            store.record_object(entry)?;
         }
     }
 
@@ -642,177 +572,6 @@ pub(crate) fn now_ns() -> String {
 pub(crate) fn output_path(source_path: &Path) -> PathBuf {
     let stripped = source_path.strip_prefix("/").unwrap_or(source_path);
     Path::new("raw").join(stripped)
-}
-
-fn collect_p0_globals(store: &mut SnapshotStore) -> Result<(), StoreError> {
-    let targets = p0_global_targets();
-    let limits = BoundedReadLimits::small();
-
-    for t in &targets {
-        let started = now_ns();
-        let source_display = t.source_path.display().to_string();
-
-        match read_file_bounded(&t.source_path, limits) {
-            Ok(result) => {
-                let out_path = output_path(&t.source_path);
-                let bytes = result.content.len() as u64;
-                let finished = now_ns();
-
-                store.write_raw_file(&out_path, &result.content)?;
-
-                let hash = if bytes <= SHA256_MAX_BYTES {
-                    Some(HashRecord::new(
-                        "sha256",
-                        compute_sha256_hex(&result.content),
-                    ))
-                } else {
-                    None
-                };
-
-                let status = if result.was_truncated {
-                    ManifestStatus::Truncated
-                } else {
-                    ManifestStatus::Captured
-                };
-
-                let mut entry = ManifestEntry::new(
-                    format!("proc.{}.{}", t.domain, t.object),
-                    SourceSlug::Proc,
-                    t.domain,
-                    t.object,
-                    t.kind,
-                    status,
-                )
-                .with_path(out_path.to_string_lossy())
-                .with_bytes(bytes)
-                .with_timing(started, finished, 0)
-                .with_limits(ObjectLimits::new(
-                    limits.max_bytes,
-                    limits.timeout_ms,
-                    1,
-                    0,
-                ));
-
-                if let Some(h) = hash {
-                    entry = entry.with_hash(h);
-                }
-
-                store.record_object(entry)?;
-            }
-            Err(error) => {
-                let status = fs_error_to_manifest_status(&error);
-                let finished = now_ns();
-
-                let entry = ManifestEntry::new(
-                    format!("proc.{}.{}", t.domain, t.object),
-                    SourceSlug::Proc,
-                    t.domain,
-                    t.object,
-                    t.kind,
-                    status,
-                )
-                .with_reason(error.to_string())
-                .with_limits(ObjectLimits::new(
-                    limits.max_bytes,
-                    limits.timeout_ms,
-                    1,
-                    0,
-                ));
-
-                store.record_object(entry)?;
-
-                store.log_error(
-                    &ErrorLogEntry::new(
-                        finished,
-                        None::<String>,
-                        status,
-                        format!("failed to read {}: {error}", &source_display),
-                    )
-                    .with_source(SourceSlug::Proc)
-                    .with_path(&source_display),
-                )?;
-            }
-        }
-    }
-
-    Ok(())
-}
-
-fn collect_p2_limited(store: &mut SnapshotStore) -> Result<(), StoreError> {
-    let targets = p2_limited_targets();
-    let limits = BoundedReadLimits::small();
-
-    for t in &targets {
-        let source_display = t.source_path.display().to_string();
-
-        match read_file_bounded(&t.source_path, limits) {
-            Ok(result) => {
-                let out_path = output_path(&t.source_path);
-                let bytes = result.content.len() as u64;
-
-                store.write_raw_file(&out_path, &result.content)?;
-
-                let status = if result.was_truncated {
-                    ManifestStatus::Truncated
-                } else {
-                    ManifestStatus::Captured
-                };
-
-                let entry = ManifestEntry::new(
-                    format!("proc.{}.{}", t.domain, t.object),
-                    SourceSlug::Proc,
-                    t.domain,
-                    t.object,
-                    t.kind,
-                    status,
-                )
-                .with_path(out_path.to_string_lossy())
-                .with_bytes(bytes)
-                .with_limits(ObjectLimits::new(
-                    limits.max_bytes,
-                    limits.timeout_ms,
-                    1,
-                    0,
-                ));
-
-                store.record_object(entry)?;
-            }
-            Err(error) => {
-                let status = fs_error_to_manifest_status(&error);
-
-                let entry = ManifestEntry::new(
-                    format!("proc.{}.{}", t.domain, t.object),
-                    SourceSlug::Proc,
-                    t.domain,
-                    t.object,
-                    t.kind,
-                    status,
-                )
-                .with_reason(error.to_string())
-                .with_limits(ObjectLimits::new(
-                    limits.max_bytes,
-                    limits.timeout_ms,
-                    1,
-                    0,
-                ));
-
-                store.record_object(entry)?;
-
-                store.log_error(
-                    &ErrorLogEntry::new(
-                        now_ns(),
-                        None::<String>,
-                        status,
-                        format!("failed to read {}: {error}", &source_display),
-                    )
-                    .with_source(SourceSlug::Proc)
-                    .with_path(&source_display),
-                )?;
-            }
-        }
-    }
-
-    Ok(())
 }
 
 fn collect_p1_processes(store: &mut SnapshotStore) -> Result<(), StoreError> {
@@ -1506,30 +1265,29 @@ mod tests {
     }
 
     #[test]
-    fn proc_collector_target_symbols_include_all_domains() {
-        let targets = p0_global_targets();
-        let domains: std::collections::BTreeSet<&str> = targets.iter().map(|t| t.domain).collect();
-        assert!(domains.contains("system"));
-        assert!(domains.contains("cpu"));
-        assert!(domains.contains("memory"));
-        assert!(domains.contains("pressure"));
-        assert!(domains.contains("interrupt"));
-        assert!(domains.contains("block"));
-        assert!(domains.contains("filesystem"));
-        assert!(domains.contains("kernel"));
-        assert!(domains.contains("net"));
+    fn proc_auto_discover_blacklist_is_stable() {
+        let config = AutoDiscoverConfig::proc_global();
+        assert!(config.is_blacklisted("kcore"));
+        assert!(config.is_blacklisted("kallsyms"));
+        assert!(!config.is_blacklisted("meminfo"));
+        assert!(!config.is_blacklisted("loadavg"));
+    }
+
+    #[test]
+    fn proc_per_process_blacklist_is_stable() {
+        let config = AutoDiscoverConfig::proc_per_process();
+        assert!(config.is_blacklisted("mem"));
+        assert!(config.is_blacklisted("pagemap"));
+        assert!(!config.is_blacklisted("status"));
+        assert!(!config.is_blacklisted("cmdline"));
     }
 
     #[test]
     fn proc_targets_have_non_empty_ids() {
-        for t in &p0_global_targets() {
-            assert!(
-                !t.object.is_empty(),
-                "P0 target '{}' has empty object",
-                t.domain
-            );
-            assert!(t.source_path.starts_with("/proc/"));
-            assert!(!t.domain.is_empty());
+        let targets = p1_process_targets();
+        for t in &targets {
+            assert!(!t.name.is_empty());
+            assert!(!t.relative.is_empty());
         }
     }
 
@@ -1591,23 +1349,12 @@ mod tests {
     }
 
     #[test]
-    fn p0_global_targets_include_core_files() {
-        let targets = p0_global_targets();
-        let names: Vec<&str> = targets.iter().map(|t| t.object).collect();
-        assert!(names.contains(&"loadavg"));
-        assert!(names.contains(&"meminfo"));
-        assert!(names.contains(&"cpuinfo"));
-        assert!(names.contains(&"stat"));
-        assert!(names.contains(&"mounts"));
-    }
-
-    #[test]
-    fn p2_limited_targets_include_ipc_and_device_files() {
-        let targets = p2_limited_targets();
-        let names: Vec<&str> = targets.iter().map(|t| t.object).collect();
-        assert!(names.contains(&"shm"));
-        assert!(names.contains(&"msg"));
-        assert!(names.contains(&"sem"));
+    fn p1_process_targets_include_core_files() {
+        let targets = p1_process_targets();
+        let names: Vec<&str> = targets.iter().map(|t| t.name).collect();
+        assert!(names.contains(&"status"));
+        assert!(names.contains(&"cmdline"));
+        assert!(names.contains(&"maps"));
     }
 
     #[test]
