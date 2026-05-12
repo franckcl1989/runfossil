@@ -41,6 +41,7 @@ pub const fn source() -> SourceSlug {
 /// Collects native netlink state for link, address, route, and neighbor
 /// families. Each dump is written as raw binary to `raw/netlink/<family>.dump`.
 pub fn collect_netlink(store: &mut SnapshotStore) -> Result<(), StoreError> {
+    // P0-P2 core families: always attempted
     let dumps = [
         NlDump {
             family: "link",
@@ -62,6 +63,24 @@ pub fn collect_netlink(store: &mut SnapshotStore) -> Result<(), StoreError> {
             msg_type: RTM_GETNEIGH,
             body_bytes: 12,
         },
+    ];
+    // P3 extended families: auto-probed, marked unsupported if socket is unavailable
+    let extended: &[NlDump] = &[
+        NlDump {
+            family: "sockdiag",
+            msg_type: 20,
+            body_bytes: 8,
+        }, // SOCK_DIAG
+        NlDump {
+            family: "conntrack",
+            msg_type: 0,
+            body_bytes: 4,
+        }, // NETLINK_NETFILTER
+        NlDump {
+            family: "xfrm",
+            msg_type: 0,
+            body_bytes: 8,
+        }, // XFRM state
     ];
 
     let mut sock = match open_netlink_socket() {
@@ -87,7 +106,46 @@ pub fn collect_netlink(store: &mut SnapshotStore) -> Result<(), StoreError> {
 
     let pid = process::id();
 
+    // Collect core families first
     for dump in &dumps {
+        let out_path = format!("raw/netlink/{}.dump", dump.family);
+        match nl_dump(&mut sock, dump.msg_type, dump.body_bytes, pid) {
+            Ok(data) => {
+                let bytes = data.len() as u64;
+                store.write_raw_file(Path::new(&out_path), &data)?;
+                store.record_object(
+                    ManifestEntry::new(
+                        format!("netlink.{}.dump", dump.family),
+                        SourceSlug::Netlink,
+                        dump.family,
+                        "dump",
+                        ObjectKind::NativeDump,
+                        ManifestStatus::Captured,
+                    )
+                    .with_path(out_path)
+                    .with_bytes(bytes)
+                    .with_limits(ObjectLimits::new(MAX_DUMP_BYTES, 2000, 1, 0)),
+                )?;
+            }
+            Err(error) => {
+                store.record_object(
+                    ManifestEntry::new(
+                        format!("netlink.{}.dump", dump.family),
+                        SourceSlug::Netlink,
+                        dump.family,
+                        "dump",
+                        ObjectKind::NativeDump,
+                        ManifestStatus::IoError,
+                    )
+                    .with_reason(format!("netlink dump failed: {error}"))
+                    .with_limits(ObjectLimits::new(MAX_DUMP_BYTES, 2000, 1, 0)),
+                )?;
+            }
+        }
+    }
+
+    // Auto-probe extended families
+    for dump in extended {
         let out_path = format!("raw/netlink/{}.dump", dump.family);
 
         match nl_dump(&mut sock, dump.msg_type, dump.body_bytes, pid) {
