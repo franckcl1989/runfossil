@@ -34,8 +34,8 @@ jobs:
           path: |
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
-          key: ${{ runner.os }}-${{ matrix.toolchain }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-${{ matrix.toolchain }}-cargo-
+          key: ${{ runner.os }}-${{ matrix.toolchain }}-cargo-registry-v2-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-${{ matrix.toolchain }}-cargo-registry-v2-
 
       - name: cargo check
         run: cargo check --workspace --all-targets --locked
@@ -62,8 +62,8 @@ jobs:
           path: |
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
-          key: ${{ runner.os }}-stable-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-stable-cargo-
+          key: ${{ runner.os }}-stable-cargo-registry-v2-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-stable-cargo-registry-v2-
 
       - name: cargo test
         run: cargo test --workspace --locked
@@ -87,8 +87,8 @@ jobs:
           path: |
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
-          key: ${{ runner.os }}-stable-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-stable-cargo-
+          key: ${{ runner.os }}-stable-cargo-registry-v2-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-stable-cargo-registry-v2-
 
       - name: cargo fmt
         run: cargo fmt --check
