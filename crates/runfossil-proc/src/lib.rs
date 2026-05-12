@@ -15,7 +15,10 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use runfossil_core::{ManifestStatus, ObjectKind, SourceSlug};
 use runfossil_fs::{BoundedReadLimits, BoundedTraversalLimits, FsError, ListResult};
 use runfossil_fs::{list_dir_entries, read_file_bounded, read_link_bounded};
-use runfossil_store::{ErrorLogEntry, ManifestEntry, ObjectLimits, SnapshotStore, StoreError};
+use runfossil_store::{
+    ErrorLogEntry, HashRecord, ManifestEntry, ObjectLimits, SHA256_MAX_BYTES, SnapshotStore,
+    StoreError, compute_sha256_hex,
+};
 
 /// Returns the source slug owned by this collector crate.
 #[must_use]
@@ -657,13 +660,22 @@ fn collect_p0_globals(store: &mut SnapshotStore) -> Result<(), StoreError> {
 
                 store.write_raw_file(&out_path, &result.content)?;
 
+                let hash = if bytes <= SHA256_MAX_BYTES {
+                    Some(HashRecord::new(
+                        "sha256",
+                        compute_sha256_hex(&result.content),
+                    ))
+                } else {
+                    None
+                };
+
                 let status = if result.was_truncated {
                     ManifestStatus::Truncated
                 } else {
                     ManifestStatus::Captured
                 };
 
-                let entry = ManifestEntry::new(
+                let mut entry = ManifestEntry::new(
                     format!("proc.{}.{}", t.domain, t.object),
                     SourceSlug::Proc,
                     t.domain,
@@ -680,6 +692,10 @@ fn collect_p0_globals(store: &mut SnapshotStore) -> Result<(), StoreError> {
                     1,
                     0,
                 ));
+
+                if let Some(h) = hash {
+                    entry = entry.with_hash(h);
+                }
 
                 store.record_object(entry)?;
             }

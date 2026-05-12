@@ -266,8 +266,8 @@ fn classify_pressure(value: f64) -> Pressure {
     }
 }
 
-fn full_as_primary(_pressure: Pressure) -> bool {
-    false
+fn full_as_primary(pressure: Pressure) -> bool {
+    matches!(pressure, Pressure::High | Pressure::Critical)
 }
 
 fn count_lines_starting(content: &[u8], prefix: &[u8]) -> u32 {

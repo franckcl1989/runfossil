@@ -19,12 +19,22 @@ mod executor;
 use executor::{CancelToken, CaptureBudget, CaptureTask, ExecutorError};
 
 const HELP: &str = "\
-runfossil
+runfossil — Linux runtime snapshot tool for incident forensics.
 
 USAGE:
-    runfossil capture
+    runfossil capture [-o <output-dir>] [-q]
     runfossil pack <snapshot-dir>
     runfossil inspect <snapshot-dir>
+    runfossil --version
+    runfossil --help
+
+FLAGS:
+    -V, --version    Print version and exit.
+    -h, --help       Print this help and exit.
+
+CAPTURE OPTIONS:
+    -o, --output <path>   Write snapshot to <path> instead of the current directory.
+    -q, --quiet           Suppress progress output; print only the snapshot path.
 ";
 
 fn main() -> ExitCode {
@@ -46,9 +56,14 @@ fn run() -> Result<(), CliError> {
             print!("{HELP}");
             Ok(())
         }
+        Some("-V" | "--version") => {
+            println!("runfossil {}", env!("CARGO_PKG_VERSION"));
+            Ok(())
+        }
         Some("capture") => {
+            let (output_dir, quiet) = capture_opts(&mut args)?;
             ensure_no_extra_arg(&mut args)?;
-            run_capture()
+            run_capture(output_dir, quiet)
         }
         Some("pack") => {
             let snapshot_dir = required_arg(&mut args, "snapshot-dir")?;
@@ -66,6 +81,29 @@ fn run() -> Result<(), CliError> {
     }
 }
 
+fn capture_opts(
+    args: &mut impl Iterator<Item = String>,
+) -> Result<(Option<PathBuf>, bool), CliError> {
+    let mut output_dir: Option<PathBuf> = None;
+    let mut quiet = false;
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "-o" | "--output" => {
+                let path = required_arg(args, "output-dir")?;
+                output_dir = Some(PathBuf::from(path));
+            }
+            "-q" | "--quiet" => {
+                quiet = true;
+            }
+            _ => {
+                // put back for ensure_no_extra_arg
+                return Err(CliError::UnexpectedArgument { argument: arg });
+            }
+        }
+    }
+    Ok((output_dir, quiet))
+}
+
 fn run_pack(snapshot_dir: &Path) -> Result<(), CliError> {
     let metadata = runfossil_pack::pack_snapshot(snapshot_dir).map_err(CliError::Pack)?;
     runfossil_pack::write_archive_metadata(&metadata).map_err(CliError::Pack)?;
@@ -79,7 +117,7 @@ fn run_inspect(snapshot_dir: &Path) -> Result<(), CliError> {
     Ok(())
 }
 
-fn run_capture() -> Result<(), CliError> {
+fn run_capture(output_dir: Option<PathBuf>, quiet: bool) -> Result<(), CliError> {
     let effective_uid = current_effective_uid()?;
     if !effective_uid.is_root() {
         return Err(CliError::NotRoot { effective_uid });
@@ -87,10 +125,10 @@ fn run_capture() -> Result<(), CliError> {
 
     let started_at_unix_ns = unix_time_ns()?;
     let host = read_host_metadata()?;
-    let snapshot_name = snapshot_name(started_at_unix_ns, &host);
-    let snapshot_dir = env::current_dir()
-        .map_err(|source| CliError::io("read current directory", source))?
-        .join(&snapshot_name);
+    let snapshot_name = snapshot_name(&host);
+    let parent_dir =
+        output_dir.unwrap_or_else(|| env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+    let snapshot_dir = parent_dir.join(&snapshot_name);
 
     let metadata = SnapshotMetadata {
         tool_version: env!("CARGO_PKG_VERSION").to_string(),
@@ -115,7 +153,9 @@ fn run_capture() -> Result<(), CliError> {
     let tasks = capture_task_list();
     let budget = CaptureBudget::default();
 
-    let exec_result = executor::run_capture_tasks(store_for_executor, tasks, &budget, cancel);
+    let capture_start = std::time::Instant::now();
+    let exec_result =
+        executor::run_capture_tasks(store_for_executor, tasks, &budget, cancel, quiet);
 
     let mut store = match Arc::into_inner(store) {
         Some(mutex) => match mutex.into_inner() {
@@ -141,6 +181,15 @@ fn run_capture() -> Result<(), CliError> {
             store
                 .finalize(&finished_at_unix_ns.to_string())
                 .map_err(CliError::Store)?;
+            let elapsed = capture_start.elapsed();
+            let entry_count = store.entry_count();
+            if !quiet {
+                eprintln!(
+                    "Capture complete: {} objects in {:.1}s",
+                    entry_count,
+                    elapsed.as_secs_f64()
+                );
+            }
             println!("{}", snapshot_dir.display());
             Ok(())
         }
@@ -149,10 +198,12 @@ fn run_capture() -> Result<(), CliError> {
             store
                 .close_partial(&finished_at_unix_ns.to_string())
                 .map_err(CliError::Store)?;
-            eprintln!(
-                "Capture cancelled; partial snapshot preserved at {}",
-                snapshot_dir.display()
-            );
+            if !quiet {
+                eprintln!(
+                    "Capture cancelled; partial snapshot preserved at {}",
+                    snapshot_dir.display()
+                );
+            }
             println!("{}", snapshot_dir.display());
             Ok(())
         }
@@ -161,10 +212,12 @@ fn run_capture() -> Result<(), CliError> {
             store
                 .close_partial(&finished_at_unix_ns.to_string())
                 .map_err(CliError::Store)?;
-            eprintln!(
-                "Capture completed with errors; partial snapshot at {}",
-                snapshot_dir.display()
-            );
+            if !quiet {
+                eprintln!(
+                    "Capture completed with errors; partial snapshot at {}",
+                    snapshot_dir.display()
+                );
+            }
             println!("{}", snapshot_dir.display());
             Ok(())
         }
@@ -237,11 +290,43 @@ fn unix_time_ns() -> Result<u128, CliError> {
         .map_err(|_| CliError::ClockBeforeEpoch)
 }
 
-fn snapshot_name(started_at_unix_ns: u128, host: &HostMetadata) -> String {
+fn snapshot_name(host: &HostMetadata) -> String {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default();
+    let secs = now.as_secs();
+    // Format: YYYYMMDDTHHMMSSZ — matching the snapshot spec example.
+    // This is a simplified conversion; it stays within the stdlib without pulling chrono.
+    let days_since_epoch = secs / 86400;
+    let time_of_day = secs % 86400;
+    let hours = time_of_day / 3600;
+    let minutes = (time_of_day % 3600) / 60;
+    let seconds = time_of_day % 60;
+
+    // Compute year/month/day from days since epoch (civil date algorithm).
+    let (year, month, day) = civil_from_days(days_since_epoch as i64 + 719_468);
+
     let hostname = sanitize_snapshot_component(&host.hostname);
     let boot_id_short =
         sanitize_snapshot_component(&host.boot_id.chars().take(8).collect::<String>());
-    format!("snapshot-{started_at_unix_ns}-{hostname}-boot-{boot_id_short}")
+    format!(
+        "snapshot-{year:04}{month:02}{day:02}T{hours:02}{minutes:02}{seconds:02}Z-{hostname}-boot-{boot_id_short}"
+    )
+}
+
+fn civil_from_days(days: i64) -> (i64, u32, u32) {
+    // Howard Hinnant's algorithm: days since 0000-03-01.
+    let z = days;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = (z - era * 146_097) as u32;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146_096) / 365;
+    let y = yoe as i64 + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if m <= 2 { y + 1 } else { y };
+    (y, m, d)
 }
 
 fn sanitize_snapshot_component(input: &str) -> String {
@@ -477,6 +562,7 @@ fn capture_task_list() -> Vec<CaptureTask> {
 }
 
 #[cfg(test)]
+#[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
     use super::*;
 
@@ -502,9 +588,19 @@ mod tests {
             kernel_release: "kernel".to_string(),
             machine: "x86_64".to_string(),
         };
-        assert_eq!(
-            snapshot_name(42, &host),
-            "snapshot-42-prod-db-01-boot-12345678"
-        );
+        let name = snapshot_name(&host);
+        assert!(name.starts_with("snapshot-"));
+        assert!(name.contains("-prod-db-01-boot-12345678"));
+        // UTC time component: YYYYMMDDTHHMMSSZ
+        let after_prefix = name
+            .strip_prefix("snapshot-")
+            .expect("snapshot name must start with 'snapshot-'");
+        let time_part = after_prefix
+            .split('-')
+            .next()
+            .expect("time component must be present");
+        assert_eq!(time_part.len(), 16); // 8 digits + T + 6 digits + Z
+        assert!(time_part.contains('T'));
+        assert!(time_part.ends_with('Z'));
     }
 }

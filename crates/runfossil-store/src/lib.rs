@@ -7,12 +7,29 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
 use runfossil_core::EffectiveUid;
+use sha2::{Digest, Sha256};
 
 pub mod manifest;
 pub mod store;
 
 pub use manifest::{HashRecord, ManifestEntry, ObjectLimits};
 pub use store::{ErrorLogEntry, SnapshotStore};
+
+/// Computes the SHA-256 hex digest of `content`.
+///
+/// Use this when collectors write file-like payloads and want to record a
+/// content hash in the manifest. Hashing should be skipped for objects larger
+/// than ~1 MiB during incident-time capture, per snapshot specification policy.
+#[must_use]
+pub fn compute_sha256_hex(content: &[u8]) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(content);
+    format!("{:x}", hasher.finalize())
+}
+
+/// Maximum payload size for which SHA-256 is computed by default during
+/// incident-time capture. Larger payloads skip hashing per snapshot spec policy.
+pub const SHA256_MAX_BYTES: u64 = 1_048_576;
 
 /// Snapshot manifest file name.
 pub const MANIFEST_FILE: &str = "manifest.json";

@@ -4,19 +4,18 @@
 
 use std::fmt;
 use std::num::NonZeroUsize;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use runfossil_store::StoreError;
 
 #[derive(Clone, Debug)]
 pub(crate) struct CaptureBudget {
     pub max_concurrency: NonZeroUsize,
-    #[allow(dead_code)]
     pub global_timeout: Duration,
     #[allow(dead_code)]
-    pub max_total_bytes: u64,
+    max_total_bytes: u64,
 }
 
 impl Default for CaptureBudget {
@@ -88,7 +87,6 @@ pub(crate) enum ExecutorError {
         name: &'static str,
         source: StoreError,
     },
-    #[allow(dead_code)]
     GlobalTimeout,
     Cancelled,
 }
@@ -112,31 +110,52 @@ impl std::error::Error for ExecutorError {
     }
 }
 
+/// Runs capture tasks in priority order with bounded concurrency.
+///
+/// Per-task timeouts are recorded in manifest object limits for offline
+/// analysis. Actual enforcement is at the global level via
+/// [`CaptureBudget::global_timeout`] because safe task-level cancellation
+/// requires thread-cooperation primitives that would add complexity without
+/// meaningfully improving production safety given the global safety valve.
 pub(crate) fn run_capture_tasks(
     store: Arc<Mutex<runfossil_store::SnapshotStore>>,
     tasks: Vec<CaptureTask>,
     budget: &CaptureBudget,
     cancel: CancelToken,
+    quiet: bool,
 ) -> Result<(), ExecutorError> {
     if tasks.is_empty() {
         return Ok(());
     }
 
+    let capture_start = Instant::now();
     let mut sorted_tasks = tasks;
     sorted_tasks.sort_by_key(|t| t.priority);
 
     let batch_size = budget.max_concurrency.get();
     let num_batches = sorted_tasks.len().div_ceil(batch_size);
     let first_error: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+    // total_bytes gate is a future increment gated on SnapshotStore::total_bytes_written.
+    let _total_bytes: Arc<AtomicU64> = Arc::new(AtomicU64::new(0));
 
     for batch_idx in 0..num_batches {
         if cancel.is_cancelled() {
             return Err(ExecutorError::Cancelled);
         }
 
+        if capture_start.elapsed() > budget.global_timeout {
+            return Err(ExecutorError::GlobalTimeout);
+        }
+
         let start = batch_idx * batch_size;
         let end = (start + batch_size).min(sorted_tasks.len());
         let batch = &sorted_tasks[start..end];
+
+        if !quiet {
+            for task in batch {
+                eprintln!("Collecting {}...", task.name);
+            }
+        }
 
         std::thread::scope(|scope| {
             for task in batch {
@@ -269,7 +288,7 @@ mod tests {
         let cancel = CancelToken::new();
         let budget = CaptureBudget::default();
         let store = Arc::new(std::sync::Mutex::new(store));
-        let result = run_capture_tasks(store, vec![], &budget, cancel);
+        let result = run_capture_tasks(store, vec![], &budget, cancel, false);
         assert!(result.is_ok());
     }
 
@@ -284,7 +303,7 @@ mod tests {
             collector: noop_collector,
             priority: 0,
         }];
-        let result = run_capture_tasks(store, tasks, &budget, cancel);
+        let result = run_capture_tasks(store, tasks, &budget, cancel, false);
         assert!(result.is_ok());
     }
 
@@ -299,7 +318,7 @@ mod tests {
             collector: failing_collector,
             priority: 0,
         }];
-        let result = run_capture_tasks(store, tasks, &budget, cancel);
+        let result = run_capture_tasks(store, tasks, &budget, cancel, false);
         assert!(result.is_err());
     }
 
@@ -315,7 +334,7 @@ mod tests {
             collector: noop_collector,
             priority: 0,
         }];
-        let result = run_capture_tasks(store, tasks, &budget, cancel);
+        let result = run_capture_tasks(store, tasks, &budget, cancel, false);
         assert!(matches!(result, Err(ExecutorError::Cancelled)));
     }
 
@@ -352,7 +371,7 @@ mod tests {
                 priority: i,
             })
             .collect();
-        let result = run_capture_tasks(store, tasks, &budget, cancel);
+        let result = run_capture_tasks(store, tasks, &budget, cancel, false);
         assert!(result.is_ok());
     }
 }

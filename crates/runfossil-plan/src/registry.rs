@@ -1212,28 +1212,6 @@ pub(crate) fn coverage_registry() -> Vec<CoverageUnit> {
     ));
 
     units.push(CoverageUnit::new(
-        "proc.net_route_all",
-        SourceSlug::Proc,
-        "network",
-        "net/route",
-        CoverageDecision::Collect,
-        Priority::P0,
-        ObjectKind::File,
-        false,
-    ));
-
-    units.push(CoverageUnit::new(
-        "proc.net_ipv6_route_all",
-        SourceSlug::Proc,
-        "network",
-        "net/ipv6_route",
-        CoverageDecision::Collect,
-        Priority::P0,
-        ObjectKind::File,
-        false,
-    ));
-
-    units.push(CoverageUnit::new(
         "proc.sys_kernel",
         SourceSlug::Proc,
         "sysctl_kernel",
@@ -1406,6 +1384,39 @@ pub(crate) fn coverage_registry() -> Vec<CoverageUnit> {
         CoverageDecision::Conditional,
         Priority::P3,
         ObjectKind::DirListing,
+        false,
+    ));
+
+    units.push(CoverageUnit::new(
+        "logs.journal.run",
+        SourceSlug::Logs,
+        "journal.run",
+        "journal/run",
+        CoverageDecision::Conditional,
+        Priority::P3,
+        ObjectKind::BoundedTree,
+        false,
+    ));
+
+    units.push(CoverageUnit::new(
+        "logs.journal.var",
+        SourceSlug::Logs,
+        "journal.var",
+        "journal/var",
+        CoverageDecision::Conditional,
+        Priority::P3,
+        ObjectKind::BoundedTree,
+        false,
+    ));
+
+    units.push(CoverageUnit::new(
+        "logs.lastlog",
+        SourceSlug::Logs,
+        "lastlog",
+        "lastlog",
+        CoverageDecision::Conditional,
+        Priority::P3,
+        ObjectKind::File,
         false,
     ));
 

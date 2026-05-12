@@ -20,22 +20,24 @@ pub(crate) fn detect_systemd() -> bool {
             || Path::new("/var/run/dbus/system_bus_socket").exists())
 }
 
-/// Collects systemd manager state via D-Bus ListUnits.
+/// Collects systemd manager state via D-Bus. Calls ListUnits once (shared
+/// between raw dump and unit-details parsing) then collects manager state,
+/// unit details, and failed-unit list.
 pub(crate) fn collect_systemd_state(
     store: &mut SnapshotStore,
     stream: &mut UnixStream,
 ) -> Result<(), StoreError> {
-    collect_list_units(store, stream)?;
+    let units_body = collect_list_units_and_dump(store, stream)?;
     collect_manager_state(store, stream)?;
-    collect_unit_details(store, stream)?;
+    collect_unit_details(store, stream, units_body)?;
     collect_failed_state(store, stream)?;
     Ok(())
 }
 
-fn collect_list_units(
+fn collect_list_units_and_dump(
     store: &mut SnapshotStore,
     stream: &mut UnixStream,
-) -> Result<(), StoreError> {
+) -> Result<Option<Vec<u8>>, StoreError> {
     let dest = "org.freedesktop.systemd1";
     let path = "/org/freedesktop/systemd1";
     let iface = "org.freedesktop.systemd1.Manager";
@@ -59,6 +61,7 @@ fn collect_list_units(
             .with_limits(ObjectLimits::new(MAX_RESPONSE_BYTES, 5000, 1, 0));
 
             store.record_object(entry)?;
+            Ok(Some(body))
         }
         Err(error) => {
             let entry = ManifestEntry::new(
@@ -80,10 +83,9 @@ fn collect_list_units(
                 format!("systemd ListUnits D-Bus call failed: {error}"),
             );
             store.log_error(&error_log)?;
+            Ok(None)
         }
     }
-
-    Ok(())
 }
 
 fn collect_manager_state(
@@ -149,34 +151,16 @@ fn collect_manager_state(
 fn collect_unit_details(
     store: &mut SnapshotStore,
     stream: &mut UnixStream,
+    units_body: Option<Vec<u8>>,
 ) -> Result<(), StoreError> {
     let dest = "org.freedesktop.systemd1";
     let path = "/org/freedesktop/systemd1";
     let iface = "org.freedesktop.systemd1.Manager";
     let out_path = "raw/service/systemd/units.json";
 
-    let units_body = match dbus::dbus_call(stream, dest, path, iface, "ListUnits", &[]) {
-        Ok(body) => body,
-        Err(error) => {
-            let entry = ManifestEntry::new(
-                "service.systemd.units",
-                SourceSlug::Service,
-                "systemd",
-                "units",
-                ObjectKind::NativeDump,
-                ManifestStatus::IoError,
-            )
-            .with_reason(format!("systemd units D-Bus call failed: {error}"))
-            .with_limits(ObjectLimits::new(MAX_RESPONSE_BYTES, 5000, 1, 0));
-
-            store.record_object(entry)?;
-            let error_log = ErrorLogEntry::new(
-                unix_time_ns_string(),
-                None::<String>,
-                ManifestStatus::IoError,
-                format!("systemd ListUnits for units parsing failed: {error}"),
-            );
-            store.log_error(&error_log)?;
+    let units_body = match units_body {
+        Some(body) => body,
+        None => {
             return Ok(());
         }
     };

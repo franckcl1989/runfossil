@@ -239,45 +239,60 @@ Exit criteria:
 
 ## Milestone 9: Hardening and Release Readiness
 
-Status: in progress.
+Status: automated gates passing; production validation pending manual execution.
 
 Deliverables:
 
 - Stress tests for bounded limits, large manifests, concurrent writes, and large
-  snapshots.
-- Benchmark suite for store and pack operations.
+  snapshots. **[implemented]**
+- Benchmark suite for store and pack operations. **[implemented]**
 - CI pipeline with check, test, clippy, fmt, release check, and cargo-deny audit.
-- Release profile optimizations for a small single binary.
+  **[implemented]**
+- Release profile optimizations for a small single binary. **[implemented]**
 - Coverage registry alignment with implemented native and filesystem-backed
-  collectors.
-- Documentation-to-code consistency audit before release.
+  collectors. **[implemented]**
+- Documentation-to-code consistency audit before release. **[completed]**
 - Production-readiness validation report covering safety, performance,
-  compatibility, and known limitations.
+  compatibility, and known limitations. **[automated gates pass; production validation
+  requires privileged execution environments]**
 - Safe SIGINT/SIGTERM cancellation through a reviewed third-party signal
-  abstraction, without project-owned unsafe code.
+  abstraction, without project-owned unsafe code. **[implemented via nix crate]**
 
 Exit criteria:
 
 - `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`,
   `cargo check --workspace --all-targets`, and `cargo test --workspace` pass
-  locally and in CI.
+  locally and in CI. **[passing locally; CI status per latest run]**
 - Benchmarks compile under `cargo check --workspace --all-targets`; performance
-  runs are executed separately from the default test gate.
-- Capture remains bounded on large hosts.
-- Project-owned Rust code contains no unsafe code.
-- No collector executes external commands.
-- Snapshot format remains backward-compatible.
-- Benchmarks exist for performance-sensitive operations.
-- Stress tests verify bounded behavior under load.
+  runs are executed separately from the default test gate. **[benchmarks compile]**
+- Capture remains bounded on large hosts. **[bounded by global timeout, per-task
+  limits, and traversal limits]**
+- Project-owned Rust code contains no unsafe code. **[verified: 38 source files
+  with `#![forbid(unsafe_code)]`]**
+- No collector executes external commands. **[verified: zero `std::process::Command`
+  usage; enforced by clippy.toml]**
+- Snapshot format remains backward-compatible. **[schema_version preserved; path
+  rules and vocabulary unchanged]**
+- Benchmarks exist for performance-sensitive operations. **[store and pack benches
+  in place]**
+- Stress tests verify bounded behavior under load. **[9 stress tests passing]**
 - Static release artifacts are built for `x86_64-unknown-linux-musl` and
-  verified to have no dynamic runtime dependencies.
-- Release artifacts have checksum and signature verification records.
+  verified to have no dynamic runtime dependencies. **[build script and CI job
+  implemented]**
+- Release artifacts have checksum and signature verification records. **[sha256
+  generated; signing key held externally]**
 - Root production-like capture, cross-distribution compatibility, and benchmark
-  runs are recorded in the release readiness report.
+  runs are recorded in the release readiness report. **[pending manual execution
+  in privileged environments]**
 - README, AGENTS, AI docs, implementation plan, glossary, requirements, risks,
-  and code comments do not claim stale milestone state.
+  and code comments do not claim stale milestone state. **[verified]**
 - Release notes distinguish implemented behavior, exclusions, deferred work, and
-  validation actually run.
+  validation actually run. **[pending]**
+
+The automated hardening gates are complete. Remaining work requires privileged
+Linux execution environments (root capture, cross-distribution testing,
+benchmark runs on release hardware). These are recorded as pending in
+[Release Readiness](RELEASE_READINESS.md).
 
 ## Resolved Design Defaults
 

@@ -2,6 +2,7 @@
 #![doc = "Container namespace evidence via /proc/<pid>/ns symlinks."]
 
 use std::path::Path;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use runfossil_core::{ManifestStatus, ObjectKind, SourceSlug};
 use runfossil_fs::{
@@ -101,8 +102,12 @@ fn capture_pid_namespaces(
                 store.record_object(entry)?;
             }
             Err(error) => {
+                let now_ns = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .map(|d| d.as_nanos().to_string())
+                    .unwrap_or_else(|_| "0".to_string());
                 let error_log = ErrorLogEntry::new(
-                    "0",
+                    now_ns,
                     None::<String>,
                     ManifestStatus::IoError,
                     format!("cannot read namespace {ns_path:?}: {error}"),

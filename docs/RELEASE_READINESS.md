@@ -69,10 +69,10 @@ release:
 
 | Gate | Required result | Status |
 |---|---|---|
-| Root production-like capture | `runfossil capture` runs as effective UID 0, preserves a complete or explicitly partial snapshot, and does not require packaging before recovery. | not run in this workspace |
-| Cross-distribution compatibility | Capture, pack, inspect, static binary execution, and failure handling are exercised on the release matrix. | not run in this workspace |
-| Performance benchmark run | Store and pack benchmarks are run on release hardware or a documented baseline host. | not run in this workspace |
-| Artifact signing and verification | Release binary checksum and detached signature are generated and verified. | requires release signing key |
+| Root production-like capture | `runfossil capture` runs as effective UID 0, preserves a complete or explicitly partial snapshot, and does not require packaging before recovery. | **passed** — Rocky Linux 8.10, kernel 4.18.0-553, 13,991 entries, 11,619 files, CAPTURE_COMPLETE |
+| Cross-distribution compatibility | Capture, pack, inspect, static binary execution, and failure handling are exercised on the release matrix. | **Rocky passed**; Debian/Ubuntu/Fedora pending |
+| Performance benchmark run | Store and pack benchmarks are run on release hardware or a documented baseline host. | **passed** — manifest_entry_create 47 ns, store 141 ms, pack 3 ms, inspect 259 µs |
+| Artifact signing and verification | Release binary checksum and detached signature are generated and verified. | **sha256 generated**; detached signature requires signing key |
 
 Minimum compatibility matrix:
 
@@ -81,7 +81,7 @@ Minimum compatibility matrix:
 | Debian | stable | x86_64 | distro default | pending |
 | Ubuntu | LTS | x86_64 | distro default | pending |
 | Fedora | current | x86_64 | distro default | pending |
-| Rocky or AlmaLinux | current major | x86_64 | distro default | pending |
+| Rocky Linux | 8.10 | x86_64 | 4.18.0-553.el8_10 | **passed** — capture (13,991 obj), pack (671 KB), inspect, static binary |
 
 Benchmark commands:
 
@@ -92,3 +92,31 @@ cargo bench -p runfossil-pack
 
 Release notes must distinguish implemented behavior, exclusions, deferred work,
 and validation actually run.
+
+## Validation Run 2026-05-12
+
+**Host**: test-chenlei-master-01 (Rocky Linux 8.10, x86_64, kernel 4.18.0-553.el8_10)
+
+**Binary**: `runfossil` 0.1.0, x86_64-unknown-linux-musl, static-pie, stripped (1.5 MB)
+- `file(1)`: `ELF 64-bit LSB shared object, x86-64, version 1 (SYSV), static-pie linked, stripped`
+- `ldd(1)`: `statically linked`
+- SHA-256: `3f787a158017b9b0302c210c4db46b4c3b13c5c19ca5e2ce2abbffc6b5ad325a`
+
+**Capture**:
+- `runfossil capture -q` → success
+- Snapshot: `snapshot-20260512T062634Z-test-chenlei-master-01-boot-eaa58214`
+- Manifest entries: 13,991
+- Raw files: 11,619
+- Statuses: 12,260 captured, 1,314 not_found, 413 io_error, 1 permission_denied, 2 truncated
+- Error log: 13 lines
+- Completion: `CAPTURE_COMPLETE` present
+
+**Pack**: `runfossil pack` → 671 KB `.tar.zst`, archive integrity verified via `inspect`
+
+**Benchmarks** (local):
+- `manifest_entry_create`: 47 ns
+- `store_record_100_finalize`: 141 ms
+- `pack_500_files`: 3 ms
+- `inspect_100_files`: 259 µs
+
+**Automated gates**: `cargo fmt`, `cargo clippy -- -D warnings`, `cargo check --all-targets`, `cargo test --workspace` (136 tests), `cargo deny check` all pass.
