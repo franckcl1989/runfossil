@@ -1223,6 +1223,17 @@ pub(crate) fn coverage_registry() -> Vec<CoverageUnit> {
     ));
 
     units.push(CoverageUnit::new(
+        "proc.fs_subtrees",
+        SourceSlug::Proc,
+        "mount_fs",
+        "fs",
+        CoverageDecision::Conditional,
+        Priority::P3,
+        ObjectKind::BoundedTree,
+        false,
+    ));
+
+    units.push(CoverageUnit::new(
         "proc.process_security",
         SourceSlug::Proc,
         "process",
@@ -1427,6 +1438,7 @@ mod tests {
             SourceSlug::Kernel,
             SourceSlug::Netlink,
             SourceSlug::Service,
+            SourceSlug::Logs,
             SourceSlug::Sessions,
             SourceSlug::Security,
             SourceSlug::Scheduler,

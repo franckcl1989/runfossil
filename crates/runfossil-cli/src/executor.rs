@@ -4,7 +4,8 @@
 
 use std::fmt;
 use std::num::NonZeroUsize;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -14,8 +15,8 @@ use runfossil_store::StoreError;
 pub(crate) struct CaptureBudget {
     pub max_concurrency: NonZeroUsize,
     pub global_timeout: Duration,
-    #[allow(dead_code)]
-    max_total_bytes: u64,
+    pub max_total_bytes: u64,
+    pub per_task_timeout: Duration,
 }
 
 impl Default for CaptureBudget {
@@ -29,8 +30,9 @@ impl Default for CaptureBudget {
         };
         Self {
             max_concurrency: concurrency,
-            global_timeout: Duration::from_secs(300),
-            max_total_bytes: 4 * 1024 * 1024 * 1024,
+            global_timeout: Duration::from_secs(30),
+            max_total_bytes: 512 * 1024 * 1024,
+            per_task_timeout: Duration::from_secs(10),
         }
     }
 }
@@ -88,6 +90,10 @@ pub(crate) enum ExecutorError {
         source: StoreError,
     },
     GlobalTimeout,
+    ByteBudgetExceeded {
+        bytes_written: u64,
+        max_bytes: u64,
+    },
     Cancelled,
 }
 
@@ -96,6 +102,13 @@ impl fmt::Display for ExecutorError {
         match self {
             Self::TaskFailed { name, source } => write!(f, "collector '{name}' failed: {source}"),
             Self::GlobalTimeout => f.write_str("global capture timeout exceeded"),
+            Self::ByteBudgetExceeded {
+                bytes_written,
+                max_bytes,
+            } => write!(
+                f,
+                "byte budget exceeded: {bytes_written} bytes written (limit {max_bytes})",
+            ),
             Self::Cancelled => f.write_str("capture cancelled"),
         }
     }
@@ -105,18 +118,17 @@ impl std::error::Error for ExecutorError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::TaskFailed { source, .. } => Some(source),
-            Self::GlobalTimeout | Self::Cancelled => None,
+            Self::GlobalTimeout | Self::ByteBudgetExceeded { .. } | Self::Cancelled => None,
         }
     }
 }
 
 /// Runs capture tasks in priority order with bounded concurrency.
 ///
-/// Per-task timeouts are recorded in manifest object limits for offline
-/// analysis. Actual enforcement is at the global level via
-/// [`CaptureBudget::global_timeout`] because safe task-level cancellation
-/// requires thread-cooperation primitives that would add complexity without
-/// meaningfully improving production safety given the global safety valve.
+/// Each task is given [`CaptureBudget::per_task_timeout`] to complete. Tasks
+/// that exceed their per-task deadline are recorded as failures but do not
+/// prevent other tasks from running. The global timeout and byte budget act
+/// as additional safety valves.
 pub(crate) fn run_capture_tasks(
     store: Arc<Mutex<runfossil_store::SnapshotStore>>,
     tasks: Vec<CaptureTask>,
@@ -129,22 +141,43 @@ pub(crate) fn run_capture_tasks(
     }
 
     let capture_start = Instant::now();
+    let mut all_handles: Vec<std::thread::JoinHandle<()>> = Vec::new();
     let mut sorted_tasks = tasks;
     sorted_tasks.sort_by_key(|t| t.priority);
 
     let batch_size = budget.max_concurrency.get();
     let num_batches = sorted_tasks.len().div_ceil(batch_size);
     let first_error: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
-    // total_bytes gate is a future increment gated on SnapshotStore::total_bytes_written.
-    let _total_bytes: Arc<AtomicU64> = Arc::new(AtomicU64::new(0));
 
     for batch_idx in 0..num_batches {
         if cancel.is_cancelled() {
+            join_remaining(&mut all_handles);
             return Err(ExecutorError::Cancelled);
         }
 
         if capture_start.elapsed() > budget.global_timeout {
+            join_remaining(&mut all_handles);
             return Err(ExecutorError::GlobalTimeout);
+        }
+
+        {
+            let Ok(store_guard) = store.lock() else {
+                join_remaining(&mut all_handles);
+                return Err(ExecutorError::TaskFailed {
+                    name: "capture",
+                    source: StoreError::io(
+                        "check byte budget",
+                        std::io::Error::other("store mutex poisoned"),
+                    ),
+                });
+            };
+            if store_guard.total_bytes_written() >= budget.max_total_bytes {
+                join_remaining(&mut all_handles);
+                return Err(ExecutorError::ByteBudgetExceeded {
+                    bytes_written: store_guard.total_bytes_written(),
+                    max_bytes: budget.max_total_bytes,
+                });
+            }
         }
 
         let start = batch_idx * batch_size;
@@ -157,56 +190,145 @@ pub(crate) fn run_capture_tasks(
             }
         }
 
-        std::thread::scope(|scope| {
-            for task in batch {
-                if cancel.is_cancelled() {
+        struct ChanPair {
+            handle: std::thread::JoinHandle<()>,
+            rx: mpsc::Receiver<Result<(), String>>,
+            task_name: &'static str,
+        }
+
+        let mut channels: Vec<ChanPair> = Vec::new();
+
+        for task in batch {
+            if cancel.is_cancelled() {
+                break;
+            }
+
+            {
+                let Ok(guard) = first_error.lock() else {
+                    break;
+                };
+                if guard.is_some() {
                     break;
                 }
+            }
 
-                {
-                    let Ok(guard) = first_error.lock() else {
-                        break;
-                    };
-                    if guard.is_some() {
-                        break;
-                    }
-                }
+            let store = Arc::clone(&store);
+            let cancel = cancel.clone();
+            let task = task.clone();
+            let (tx, rx) = mpsc::channel::<Result<(), String>>();
 
-                let store = Arc::clone(&store);
-                let cancel = cancel.clone();
-                let first_error = Arc::clone(&first_error);
-
-                scope.spawn(move || {
+            let task_name = task.name;
+            match std::thread::Builder::new()
+                .name(format!("runfossil-{task_name}"))
+                .spawn(move || {
                     if cancel.is_cancelled() {
+                        let _ = tx.send(Ok(()));
                         return;
                     }
 
-                    let task_result = match store.lock() {
+                    let result = match store.lock() {
                         Ok(mut store_guard) => (task.collector)(&mut store_guard),
                         Err(_) => {
-                            if let Ok(mut err) = first_error.lock()
-                                && err.is_none()
-                            {
-                                *err = Some(format!(
-                                    "collector '{}': store mutex poisoned",
-                                    task.name
-                                ));
-                            }
+                            let _ = tx.send(Err(format!(
+                                "collector '{task_name}': store mutex poisoned"
+                            )));
                             return;
                         }
                     };
 
-                    if let Err(source) = task_result
-                        && let Ok(mut err) = first_error.lock()
+                    match result {
+                        Ok(()) => {
+                            let _ = tx.send(Ok(()));
+                        }
+                        Err(source) => {
+                            let _ = tx.send(Err(format!("collector '{task_name}': {source}")));
+                        }
+                    }
+                }) {
+                Ok(handle) => channels.push(ChanPair {
+                    handle,
+                    rx,
+                    task_name,
+                }),
+                Err(source) => {
+                    if let Ok(mut err) = first_error.lock()
                         && err.is_none()
                     {
-                        *err = Some(format!("collector '{}': {source}", task.name));
+                        *err = Some(format!(
+                            "failed to spawn thread for '{task_name}': {source}"
+                        ));
                     }
-                });
+                }
             }
-        });
+        }
+
+        for chan in channels {
+            let ChanPair {
+                handle,
+                rx,
+                task_name,
+            } = chan;
+
+            if capture_start.elapsed() > budget.global_timeout {
+                drop(rx);
+                if let Ok(mut err) = first_error.lock()
+                    && err.is_none()
+                {
+                    *err = Some(format!(
+                        "collector '{task_name}': global capture timeout exceeded",
+                    ));
+                }
+                all_handles.push(handle);
+                continue;
+            }
+
+            let timed_out = match rx.recv_timeout(budget.per_task_timeout) {
+                Ok(Ok(())) => false,
+                Ok(Err(msg)) => {
+                    if let Ok(mut err) = first_error.lock()
+                        && err.is_none()
+                    {
+                        *err = Some(msg);
+                    }
+                    false
+                }
+                Err(mpsc::RecvTimeoutError::Timeout) => {
+                    drop(rx);
+                    if let Ok(mut err) = first_error.lock()
+                        && err.is_none()
+                    {
+                        *err = Some(format!(
+                            "collector '{task_name}': exceeded per-task timeout",
+                        ));
+                    }
+                    true
+                }
+                Err(mpsc::RecvTimeoutError::Disconnected) => {
+                    if let Ok(mut err) = first_error.lock()
+                        && err.is_none()
+                    {
+                        *err = Some(format!(
+                            "collector '{task_name}': thread panicked before sending result",
+                        ));
+                    }
+                    true
+                }
+            };
+
+            let join_limit = if timed_out {
+                Duration::from_secs(5)
+            } else {
+                Duration::from_secs(2)
+            };
+            let join_deadline = Instant::now() + join_limit;
+            while !handle.is_finished() && Instant::now() < join_deadline {
+                std::thread::sleep(Duration::from_millis(100));
+            }
+            all_handles.push(handle);
+        }
 
         if cancel.is_cancelled() {
+            join_remaining(&mut all_handles);
             return Err(ExecutorError::Cancelled);
         }
 
@@ -215,6 +337,7 @@ pub(crate) fn run_capture_tasks(
                 break;
             }
         } else {
+            join_remaining(&mut all_handles);
             return Err(ExecutorError::TaskFailed {
                 name: "capture",
                 source: StoreError::io(
@@ -224,6 +347,8 @@ pub(crate) fn run_capture_tasks(
             });
         }
     }
+
+    join_remaining(&mut all_handles);
 
     if let Ok(guard) = first_error.lock() {
         if let Some(ref msg) = *guard {
@@ -242,6 +367,15 @@ pub(crate) fn run_capture_tasks(
                 std::io::Error::other("error mutex poisoned"),
             ),
         })
+    }
+}
+
+fn join_remaining(handles: &mut Vec<std::thread::JoinHandle<()>>) {
+    let deadline = Instant::now() + Duration::from_secs(3);
+    for handle in handles.drain(..) {
+        while !handle.is_finished() && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(50));
+        }
     }
 }
 

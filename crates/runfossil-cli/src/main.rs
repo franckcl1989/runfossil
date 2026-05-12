@@ -150,39 +150,37 @@ fn run_capture(output_dir: Option<PathBuf>, quiet: bool) -> Result<(), CliError>
 
     let store = Arc::new(std::sync::Mutex::new(store));
     let store_for_executor = Arc::clone(&store);
-    let tasks = capture_task_list();
+    let tasks = capture_task_list(&plan);
     let budget = CaptureBudget::default();
 
     let capture_start = std::time::Instant::now();
     let exec_result =
         executor::run_capture_tasks(store_for_executor, tasks, &budget, cancel, quiet);
 
-    let mut store = match Arc::into_inner(store) {
-        Some(mutex) => match mutex.into_inner() {
-            Ok(store) => store,
-            Err(_) => {
-                return Err(CliError::Store(StoreError::io(
-                    "unlock store after capture",
-                    std::io::Error::other("store mutex poisoned"),
-                )));
-            }
-        },
-        None => {
-            return Err(CliError::Store(StoreError::io(
-                "finalize store",
-                std::io::Error::other("store still referenced after executor"),
-            )));
-        }
-    };
-
     match exec_result {
         Ok(()) => {
             let finished_at_unix_ns = unix_time_ns()?;
-            store
-                .finalize(&finished_at_unix_ns.to_string())
-                .map_err(CliError::Store)?;
+            {
+                let mut store_guard = store.lock().map_err(|_| {
+                    CliError::Store(StoreError::io(
+                        "finalize store",
+                        std::io::Error::other("store mutex poisoned"),
+                    ))
+                })?;
+                store_guard
+                    .finalize(&finished_at_unix_ns.to_string())
+                    .map_err(CliError::Store)?;
+            }
             let elapsed = capture_start.elapsed();
-            let entry_count = store.entry_count();
+            let entry_count = {
+                let guard = store.lock().map_err(|_| {
+                    CliError::Store(StoreError::io(
+                        "read entry count",
+                        std::io::Error::other("store mutex poisoned"),
+                    ))
+                })?;
+                guard.entry_count()
+            };
             if !quiet {
                 eprintln!(
                     "Capture complete: {} objects in {:.1}s",
@@ -195,9 +193,17 @@ fn run_capture(output_dir: Option<PathBuf>, quiet: bool) -> Result<(), CliError>
         }
         Err(ExecutorError::Cancelled) => {
             let finished_at_unix_ns = unix_time_ns()?;
-            store
-                .close_partial(&finished_at_unix_ns.to_string())
-                .map_err(CliError::Store)?;
+            {
+                let mut store_guard = store.lock().map_err(|_| {
+                    CliError::Store(StoreError::io(
+                        "close partial store",
+                        std::io::Error::other("store mutex poisoned"),
+                    ))
+                })?;
+                store_guard
+                    .close_partial(&finished_at_unix_ns.to_string())
+                    .map_err(CliError::Store)?;
+            }
             if !quiet {
                 eprintln!(
                     "Capture cancelled; partial snapshot preserved at {}",
@@ -209,9 +215,17 @@ fn run_capture(output_dir: Option<PathBuf>, quiet: bool) -> Result<(), CliError>
         }
         Err(ExecutorError::TaskFailed { name: _, source: _ }) => {
             let finished_at_unix_ns = unix_time_ns()?;
-            store
-                .close_partial(&finished_at_unix_ns.to_string())
-                .map_err(CliError::Store)?;
+            {
+                let mut store_guard = store.lock().map_err(|_| {
+                    CliError::Store(StoreError::io(
+                        "close partial store",
+                        std::io::Error::other("store mutex poisoned"),
+                    ))
+                })?;
+                store_guard
+                    .close_partial(&finished_at_unix_ns.to_string())
+                    .map_err(CliError::Store)?;
+            }
             if !quiet {
                 eprintln!(
                     "Capture completed with errors; partial snapshot at {}",
@@ -223,10 +237,36 @@ fn run_capture(output_dir: Option<PathBuf>, quiet: bool) -> Result<(), CliError>
         }
         Err(ExecutorError::GlobalTimeout) => {
             let finished_at_unix_ns = unix_time_ns()?;
-            store
-                .close_partial(&finished_at_unix_ns.to_string())
-                .map_err(CliError::Store)?;
+            {
+                let mut store_guard = store.lock().map_err(|_| {
+                    CliError::Store(StoreError::io(
+                        "close partial store",
+                        std::io::Error::other("store mutex poisoned"),
+                    ))
+                })?;
+                store_guard
+                    .close_partial(&finished_at_unix_ns.to_string())
+                    .map_err(CliError::Store)?;
+            }
             Err(CliError::CaptureTimeout)
+        }
+        Err(ExecutorError::ByteBudgetExceeded {
+            bytes_written: _,
+            max_bytes: _,
+        }) => {
+            let finished_at_unix_ns = unix_time_ns()?;
+            {
+                let mut store_guard = store.lock().map_err(|_| {
+                    CliError::Store(StoreError::io(
+                        "close partial store",
+                        std::io::Error::other("store mutex poisoned"),
+                    ))
+                })?;
+                store_guard
+                    .close_partial(&finished_at_unix_ns.to_string())
+                    .map_err(CliError::Store)?;
+            }
+            Err(CliError::ByteBudgetExceeded)
         }
     }
 }
@@ -367,6 +407,7 @@ enum CliError {
     },
     ClockBeforeEpoch,
     CaptureTimeout,
+    ByteBudgetExceeded,
     Io {
         context: &'static str,
         source: std::io::Error,
@@ -389,6 +430,7 @@ impl CliError {
             Self::NotRoot { .. } => 77,
             Self::MissingEffectiveUid | Self::ParseUid { .. } | Self::ClockBeforeEpoch => 70,
             Self::CaptureTimeout
+            | Self::ByteBudgetExceeded
             | Self::Io { .. }
             | Self::Store(_)
             | Self::Pack(_)
@@ -426,6 +468,7 @@ impl fmt::Display for CliError {
             }
             Self::ClockBeforeEpoch => formatter.write_str("system clock is before the Unix epoch"),
             Self::CaptureTimeout => formatter.write_str("global capture timeout exceeded"),
+            Self::ByteBudgetExceeded => formatter.write_str("capture byte budget exceeded"),
             Self::Io { context, source } => write!(formatter, "{context}: {source}"),
             Self::Store(source) => write!(formatter, "{source}"),
             Self::Pack(source) => write!(formatter, "packaging error: {source}"),
@@ -448,7 +491,8 @@ impl std::error::Error for CliError {
             | Self::NotRoot { .. }
             | Self::MissingEffectiveUid
             | Self::ClockBeforeEpoch
-            | Self::CaptureTimeout => None,
+            | Self::CaptureTimeout
+            | Self::ByteBudgetExceeded => None,
         }
     }
 }
@@ -501,59 +545,70 @@ fn capture_signal_set() -> SigSet {
     signals
 }
 
-fn capture_task_list() -> Vec<CaptureTask> {
-    vec![
-        CaptureTask {
-            name: "proc",
-            collector: runfossil_proc::collect_proc,
-            priority: 0,
-        },
-        CaptureTask {
-            name: "sys",
-            collector: runfossil_proc::collect_sys,
-            priority: 1,
-        },
-        CaptureTask {
-            name: "dev",
-            collector: runfossil_proc::collect_dev,
-            priority: 1,
-        },
-        CaptureTask {
-            name: "kmsg",
-            collector: runfossil_proc::collect_kmsg,
-            priority: 0,
-        },
-        CaptureTask {
-            name: "crash",
-            collector: runfossil_proc::collect_crash,
-            priority: 2,
-        },
-        CaptureTask {
-            name: "security",
-            collector: runfossil_proc::collect_security,
-            priority: 2,
-        },
-        CaptureTask {
-            name: "run",
-            collector: runfossil_proc::collect_run,
-            priority: 2,
-        },
-        CaptureTask {
-            name: "netlink",
-            collector: runfossil_net::collect_netlink,
-            priority: 2,
-        },
-        CaptureTask {
+fn capture_task_list(plan: &runfossil_plan::CapturePlan) -> Vec<CaptureTask> {
+    let systemd = plan.probes().systemd_detected;
+    let mut tasks = Vec::with_capacity(10);
+
+    tasks.push(CaptureTask {
+        name: "proc",
+        collector: runfossil_proc::collect_proc,
+        priority: 0,
+    });
+    tasks.push(CaptureTask {
+        name: "sys",
+        collector: runfossil_proc::collect_sys,
+        priority: 1,
+    });
+    tasks.push(CaptureTask {
+        name: "dev",
+        collector: runfossil_proc::collect_dev,
+        priority: 1,
+    });
+    tasks.push(CaptureTask {
+        name: "kmsg",
+        collector: runfossil_proc::collect_kmsg,
+        priority: 0,
+    });
+    tasks.push(CaptureTask {
+        name: "crash",
+        collector: runfossil_proc::collect_crash,
+        priority: 2,
+    });
+    tasks.push(CaptureTask {
+        name: "security",
+        collector: runfossil_proc::collect_security,
+        priority: 2,
+    });
+    tasks.push(CaptureTask {
+        name: "run",
+        collector: runfossil_proc::collect_run,
+        priority: 2,
+    });
+    tasks.push(CaptureTask {
+        name: "netlink",
+        collector: runfossil_net::collect_netlink,
+        priority: 2,
+    });
+    if systemd {
+        tasks.push(CaptureTask {
             name: "service",
             collector: runfossil_service::collect_service,
             priority: 3,
-        },
-        CaptureTask {
+        });
+        tasks.push(CaptureTask {
             name: "scheduler",
             collector: runfossil_proc::collect_scheduler,
             priority: 3,
-        },
-    ]
+        });
+    } else {
+        tasks.push(CaptureTask {
+            name: "scheduler",
+            collector: runfossil_proc::collect_scheduler,
+            priority: 3,
+        });
+    }
+
+    tasks
 }
 
 #[cfg(test)]

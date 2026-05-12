@@ -5,6 +5,7 @@ use std::fmt;
 use std::fs;
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
 use runfossil_core::{ArtifactPathError, validate_relative_artifact_path};
 
@@ -231,8 +232,12 @@ pub fn read_file_bounded(path: &Path, limits: BoundedReadLimits) -> Result<ReadR
     let mut content = Vec::new();
     let mut buffer = [0u8; 8192];
     let mut total_read: u64 = 0;
+    let deadline = Instant::now() + Duration::from_millis(limits.timeout_ms);
 
     loop {
+        if Instant::now() >= deadline {
+            return Err(FsError::timeout(path));
+        }
         let max_read = (limits.max_bytes + 1).saturating_sub(total_read);
         if max_read == 0 {
             return Ok(ReadResult {
@@ -258,12 +263,8 @@ pub fn read_file_bounded(path: &Path, limits: BoundedReadLimits) -> Result<ReadR
     })
 }
 
-/// Reads a symlink target path.
-///
-/// Falls back to returning a zero-length path when the link cannot be read.
-/// Callers should check the returned path length or use the error variant.
-pub fn read_link_bounded(path: &Path, limits: BoundedReadLimits) -> Result<PathBuf, FsError> {
-    let _ = limits;
+/// Reads a symlink target path with limits recorded in the manifest.
+pub fn read_link_bounded(path: &Path, _limits: BoundedReadLimits) -> Result<PathBuf, FsError> {
     fs::read_link(path).map_err(|error| FsError::map_io_error(path, error))
 }
 
@@ -282,8 +283,12 @@ pub fn list_dir_entries(
 
     let mut entries = Vec::new();
     let mut count: u64 = 0;
+    let deadline = Instant::now() + Duration::from_millis(limits.timeout_ms);
 
     for entry_result in dir {
+        if Instant::now() >= deadline {
+            return Err(FsError::timeout(path));
+        }
         if count >= limits.max_files {
             return Ok(ListResult {
                 entries,
@@ -346,6 +351,7 @@ impl AutoDiscoverConfig {
                 "kpagecount",
                 "kpageflags",
                 "kpagecgroup",
+                "sysrq-trigger",
             ],
             max_bytes_per_file: 1_048_576,
             max_files_per_level: 512,
@@ -401,10 +407,19 @@ impl AutoDiscoverConfig {
     }
 
     /// Config for /run directories: bounded recursion, cautious depth.
+    /// Excludes application-layer container engine sockets per coverage matrix.
     #[must_use]
     pub const fn run_dir() -> Self {
         Self {
-            blacklist: &[],
+            blacklist: &[
+                "docker.sock",
+                "containerd",
+                "crio",
+                "runc",
+                "podman",
+                "kata-containers",
+                "gvisor",
+            ],
             max_bytes_per_file: 262_144,
             max_files_per_level: 64,
             max_depth: 3,

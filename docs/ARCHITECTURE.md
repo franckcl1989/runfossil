@@ -26,7 +26,6 @@ crates/
   runfossil-proc
   runfossil-net
   runfossil-service
-  runfossil-container
   runfossil-pack
 ```
 
@@ -148,16 +147,11 @@ The crate must not invoke `systemctl`, `loginctl`, `timedatectl`, or
 
 ### runfossil-container
 
-Responsibilities:
-
-- Local container runtime discovery.
-- Native socket/protocol collection for Docker, containerd, CRI-O, and runc
-  state where feasible.
-- Container object, process, resource, namespace, cgroup, event, and log-window
-  evidence.
-
-The crate must not invoke `docker`, `ctr`, `crictl`, `podman`, or `runc`
-commands.
+Container runtime state is collected from host-side procfs, cgroupfs, and
+namespace evidence through `runfossil-proc` and `runfossil-fs`. Daemon API
+protocols (Docker, containerd, CRI-O) are excluded from the current
+kernel-focused scope unless the coverage matrix is changed first. Container
+runtime socket detection remains in the host probe for planning purposes.
 
 ### runfossil-pack
 
@@ -275,19 +269,19 @@ Each source family maps to a planned collector crate. This mapping guides
 implementation without locking the workspace shape:
 
 | Source family (L1) | Primary crate | Collection methods |
-|---|---|---|
+|---|---|---|---|
 | `/proc` | `runfossil-proc` | raw-file, dir-listing, symlink-targets |
-| `/sys` | `runfossil-fs` | bounded-tree, raw-file |
-| `/run` | `runfossil-fs` | bounded-tree, metadata |
-| `/dev` | `runfossil-fs` | metadata, symlink-targets |
-| Kernel ring buffer | `runfossil-store` | bounded-window |
-| System event log | `runfossil-service` | native-protocol |
-| Service manager | `runfossil-service` | native-protocol |
+| `/sys` | `runfossil-proc` | bounded-tree, raw-file |
+| `/run` | `runfossil-proc` | bounded-tree, metadata |
+| `/dev` | `runfossil-proc` | metadata, symlink-targets |
+| Kernel ring buffer | `runfossil-proc` | bounded-window |
+| System event log | `runfossil-service` | bounded-tree, metadata |
+| Service manager | `runfossil-service` | native-protocol (D-Bus) |
 | Netlink | `runfossil-net` | native-netlink |
-| Security / audit | `runfossil-fs`, `runfossil-service` | bounded-tree, native-protocol |
-| User / session | `runfossil-service` | native-protocol |
-| Scheduler / job | `runfossil-service` | native-protocol, bounded-tree |
-| Time sync | `runfossil-service` | native-protocol, metadata |
-| Crash dump store | `runfossil-fs` | metadata-only, bounded-tree |
-| Hardware management | `runfossil-fs` | bounded-tree |
-| Container runtime | `runfossil-container` | native-socket, bounded-tree |
+| Security / audit | `runfossil-proc`, `runfossil-service` | bounded-tree, native-protocol |
+| User / session | `runfossil-service` | native-protocol (D-Bus) |
+| Scheduler / job | `runfossil-proc`, `runfossil-service` | bounded-tree, native-protocol |
+| Time sync | `runfossil-service` | metadata |
+| Crash dump store | `runfossil-proc` | metadata, bounded-tree |
+| Hardware management | `runfossil-proc` | bounded-tree |
+| Container runtime | `runfossil-proc` | host-side procfs, cgroup, namespace evidence |

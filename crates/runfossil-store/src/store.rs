@@ -2,6 +2,8 @@
 #![doc = "Snapshot store session: directory management, manifest tracking, error logging, and partial snapshot behavior."]
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use runfossil_core::{ManifestStatus, SourceSlug, validate_relative_artifact_path};
 
@@ -100,6 +102,7 @@ pub struct SnapshotStore {
     metadata: SnapshotMetadata,
     manifest_entries: Vec<ManifestEntry>,
     finalized: bool,
+    bytes_written: Arc<AtomicU64>,
 }
 
 impl SnapshotStore {
@@ -148,6 +151,7 @@ impl SnapshotStore {
             metadata,
             manifest_entries: Vec::new(),
             finalized: false,
+            bytes_written: Arc::new(AtomicU64::new(0)),
         })
     }
 
@@ -198,7 +202,10 @@ impl SnapshotStore {
         {
             create_dir_all(parent)?;
         }
-        write_atomic_bytes(&full_path, contents)
+        write_atomic_bytes(&full_path, contents)?;
+        self.bytes_written
+            .fetch_add(contents.len() as u64, Ordering::Release);
+        Ok(())
     }
 
     /// Finalizes the snapshot: writes the complete `manifest.json` with all
@@ -261,6 +268,19 @@ impl SnapshotStore {
     #[must_use]
     pub fn entry_count(&self) -> usize {
         self.manifest_entries.len()
+    }
+
+    /// Returns the total bytes written to raw evidence files so far.
+    #[must_use]
+    pub fn total_bytes_written(&self) -> u64 {
+        self.bytes_written.load(Ordering::Acquire)
+    }
+
+    /// Returns a shared reference to the bytes-written counter for external
+    /// budget enforcement without locking the store.
+    #[must_use]
+    pub fn bytes_written_counter(&self) -> Arc<AtomicU64> {
+        Arc::clone(&self.bytes_written)
     }
 }
 
@@ -387,7 +407,7 @@ fn build_manifest_json(
             "  \"started_at_unix_ns\": \"{}\",\n",
             "  \"finished_at_unix_ns\": \"{}\",\n",
             "  \"complete\": {},\n",
-            "  \"root\": true,\n",
+            "  \"root\": {},\n",
             "  \"host\": {{\n",
             "    \"hostname\": \"{}\",\n",
             "    \"boot_id\": \"{}\",\n",
@@ -401,6 +421,7 @@ fn build_manifest_json(
         json_escape(&metadata.started_at_unix_ns),
         json_escape(finished_at_unix_ns),
         complete,
+        metadata.effective_uid.is_root(),
         json_escape(&metadata.host.hostname),
         json_escape(&metadata.host.boot_id),
         json_escape(&metadata.host.kernel_release),

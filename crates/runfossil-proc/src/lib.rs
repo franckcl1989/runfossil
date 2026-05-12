@@ -41,6 +41,9 @@ pub fn collect_proc(store: &mut SnapshotStore) -> Result<(), StoreError> {
     collect_proc_net_auto(store)?;
     collect_p1_processes(store)?;
     collect_proc_sys(store)?;
+    collect_proc_sysvipc(store)?;
+    collect_proc_irq(store)?;
+    collect_proc_fs(store)?;
     Ok(())
 }
 
@@ -292,7 +295,8 @@ fn store_write_captured_file(
 }
 
 /// Collects sysctl-like files from /proc/sys/kernel, /proc/sys/vm,
-/// /proc/sys/fs, and /proc/sys/net.
+/// /proc/sys/fs, /proc/sys/net, /proc/sys/user, /proc/sys/debug,
+/// /proc/sys/dev, and /proc/sys/abi.
 fn collect_proc_sys(store: &mut SnapshotStore) -> Result<(), StoreError> {
     let limits = BoundedTraversalLimits::new(512, 3, 5000);
     let read_limits = BoundedReadLimits::new(65_536, 200);
@@ -302,6 +306,10 @@ fn collect_proc_sys(store: &mut SnapshotStore) -> Result<(), StoreError> {
         ("vm", "sysctl_vm", "sys_vm"),
         ("fs", "sysctl_fs", "sys_fs"),
         ("net", "sysctl_net", "sys_net"),
+        ("user", "sysctl_user", "sys_user"),
+        ("debug", "sysctl_debug", "sys_debug"),
+        ("dev", "sysctl_dev", "sys_dev"),
+        ("abi", "sysctl_abi", "sys_abi"),
     ];
 
     for (subdir, domain, id_prefix) in subdirs {
@@ -410,6 +418,259 @@ fn walk_proc_sys_subdir(
         }
     }
 
+    Ok(())
+}
+
+/// Collects SysV IPC runtime state from /proc/sysvipc/{shm,msg,sem}.
+fn collect_proc_sysvipc(store: &mut SnapshotStore) -> Result<(), StoreError> {
+    let root = Path::new("/proc/sysvipc");
+    if !root.is_dir() {
+        return Ok(());
+    }
+
+    let limits = BoundedTraversalLimits::new(32, 1, 500);
+    let read_limits = BoundedReadLimits::new(131_072, 200);
+
+    let listing = match list_dir_entries(root, limits) {
+        Ok(l) => l,
+        Err(_) => return Ok(()),
+    };
+
+    for entry in &listing.entries {
+        if entry.is_dir {
+            continue;
+        }
+        let source_path = root.join(&entry.name);
+        match read_file_bounded(&source_path, read_limits) {
+            Ok(result) => {
+                let out_path = output_path(&source_path);
+                let bytes = result.content.len() as u64;
+                store.write_raw_file(&out_path, &result.content)?;
+                let status = if result.was_truncated {
+                    ManifestStatus::Truncated
+                } else {
+                    ManifestStatus::Captured
+                };
+                let manifest_entry = ManifestEntry::new(
+                    format!("proc.ipc.{}", entry.name),
+                    SourceSlug::Proc,
+                    "ipc",
+                    &entry.name,
+                    ObjectKind::File,
+                    status,
+                )
+                .with_path(out_path.to_string_lossy())
+                .with_bytes(bytes)
+                .with_limits(ObjectLimits::new(
+                    read_limits.max_bytes,
+                    read_limits.timeout_ms,
+                    1,
+                    0,
+                ));
+                store.record_object(manifest_entry)?;
+            }
+            Err(error) => {
+                let status = fs_error_to_manifest_status(&error);
+                let entry = ManifestEntry::new(
+                    format!("proc.ipc.{}", entry.name),
+                    SourceSlug::Proc,
+                    "ipc",
+                    &entry.name,
+                    ObjectKind::File,
+                    status,
+                )
+                .with_reason(error.to_string())
+                .with_limits(ObjectLimits::new(
+                    read_limits.max_bytes,
+                    read_limits.timeout_ms,
+                    1,
+                    0,
+                ));
+                store.record_object(entry)?;
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Collects interrupt counter files from /proc/irq/*/ bounded tree.
+fn collect_proc_irq(store: &mut SnapshotStore) -> Result<(), StoreError> {
+    let root = Path::new("/proc/irq");
+    if !root.is_dir() {
+        return Ok(());
+    }
+
+    let limits = BoundedTraversalLimits::new(256, 2, 1000);
+    let read_limits = BoundedReadLimits::new(65_536, 200);
+
+    let listing = match list_dir_entries(root, limits) {
+        Ok(l) => l,
+        Err(_) => return Ok(()),
+    };
+
+    for entry in &listing.entries {
+        if !entry.is_dir {
+            continue;
+        }
+        let irq_dir = root.join(&entry.name);
+        let sub_limits = BoundedTraversalLimits::new(32, 0, 200);
+        if let Ok(sub) = list_dir_entries(&irq_dir, sub_limits) {
+            for sub_entry in &sub.entries {
+                if sub_entry.is_dir {
+                    continue;
+                }
+                let source_path = irq_dir.join(&sub_entry.name);
+                if let Ok(result) = read_file_bounded(&source_path, read_limits) {
+                    let out_path = output_path(&source_path);
+                    let bytes = result.content.len() as u64;
+                    store.write_raw_file(&out_path, &result.content)?;
+                    let status = if result.was_truncated {
+                        ManifestStatus::Truncated
+                    } else {
+                        ManifestStatus::Captured
+                    };
+                    let manifest_entry = ManifestEntry::new(
+                        format!("proc.irq.{}.{}", entry.name, sub_entry.name),
+                        SourceSlug::Proc,
+                        "interrupt_softirq",
+                        format!("irq/{}/{}", entry.name, sub_entry.name),
+                        ObjectKind::File,
+                        status,
+                    )
+                    .with_path(out_path.to_string_lossy())
+                    .with_bytes(bytes)
+                    .with_limits(ObjectLimits::new(
+                        read_limits.max_bytes,
+                        read_limits.timeout_ms,
+                        1,
+                        0,
+                    ));
+                    store.record_object(manifest_entry)?;
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Collects per-filesystem runtime state from /proc/fs/* bounded tree.
+fn collect_proc_fs(store: &mut SnapshotStore) -> Result<(), StoreError> {
+    let root = Path::new("/proc/fs");
+    if !root.is_dir() {
+        return Ok(());
+    }
+
+    let limits = BoundedTraversalLimits::new(128, 3, 2000);
+    let read_limits = BoundedReadLimits::new(65_536, 500);
+
+    let listing = match list_dir_entries(root, limits) {
+        Ok(l) => l,
+        Err(_) => return Ok(()),
+    };
+
+    for entry in &listing.entries {
+        let source_path = root.join(&entry.name);
+        if entry.is_dir {
+            collect_proc_fs_subdir(
+                store,
+                &source_path,
+                &format!("fs/{}", entry.name),
+                read_limits,
+                1,
+            )?;
+        } else {
+            collect_proc_fs_file(store, &source_path, "fs", &entry.name, read_limits)?;
+        }
+    }
+
+    Ok(())
+}
+
+fn collect_proc_fs_subdir(
+    store: &mut SnapshotStore,
+    dir: &Path,
+    id_prefix: &str,
+    read_limits: BoundedReadLimits,
+    depth: u32,
+) -> Result<(), StoreError> {
+    if depth > 3 {
+        return Ok(());
+    }
+
+    let limits = BoundedTraversalLimits::new(64, 0, 500);
+
+    let listing = match list_dir_entries(dir, limits) {
+        Ok(l) => l,
+        Err(_) => return Ok(()),
+    };
+
+    for entry in &listing.entries {
+        let source_path = dir.join(&entry.name);
+        if entry.is_dir {
+            collect_proc_fs_subdir(
+                store,
+                &source_path,
+                &format!("{}/{}", id_prefix, entry.name),
+                read_limits,
+                depth + 1,
+            )?;
+        } else {
+            collect_proc_fs_file(store, &source_path, id_prefix, &entry.name, read_limits)?;
+        }
+    }
+
+    Ok(())
+}
+
+fn collect_proc_fs_file(
+    store: &mut SnapshotStore,
+    source_path: &Path,
+    domain: &str,
+    name: &str,
+    limits: BoundedReadLimits,
+) -> Result<(), StoreError> {
+    match read_file_bounded(source_path, limits) {
+        Ok(result) => {
+            let out_path = output_path(source_path);
+            let bytes = result.content.len() as u64;
+            store.write_raw_file(&out_path, &result.content)?;
+            let status = if result.was_truncated {
+                ManifestStatus::Truncated
+            } else {
+                ManifestStatus::Captured
+            };
+            let id = format!("proc.fs.{}.{}", domain.replace('/', "."), name);
+            let manifest_entry = ManifestEntry::new(
+                id,
+                SourceSlug::Proc,
+                format!("mount_fs/{}", domain),
+                name,
+                ObjectKind::File,
+                status,
+            )
+            .with_path(out_path.to_string_lossy())
+            .with_bytes(bytes)
+            .with_limits(ObjectLimits::new(limits.max_bytes, limits.timeout_ms, 1, 0));
+            store.record_object(manifest_entry)?;
+        }
+        Err(error) => {
+            let status = fs_error_to_manifest_status(&error);
+            let id = format!("proc.fs.{}.{}", domain.replace('/', "."), name);
+            let manifest_entry = ManifestEntry::new(
+                id,
+                SourceSlug::Proc,
+                format!("mount_fs/{}", domain),
+                name,
+                ObjectKind::File,
+                status,
+            )
+            .with_reason(error.to_string())
+            .with_limits(ObjectLimits::new(limits.max_bytes, limits.timeout_ms, 1, 0));
+            store.record_object(manifest_entry)?;
+        }
+    }
     Ok(())
 }
 

@@ -27,13 +27,15 @@ pub(crate) fn collect_run(store: &mut SnapshotStore) -> Result<(), StoreError> {
     };
 
     for entry in &listing.entries {
+        if config.is_blacklisted(&entry.name) {
+            continue;
+        }
+
         let source_path = root.join(&entry.name);
 
         if entry.is_dir {
-            // Bounded-depth subdirectory traversal
             collect_run_tree(store, &source_path, &entry.name, &config, read_limits, 1)?;
         } else {
-            // Top-level file: bounded read
             collect_run_file(store, &source_path, "top", &entry.name, read_limits)?;
         }
     }
@@ -61,6 +63,10 @@ fn collect_run_tree(
     };
 
     for entry in &listing.entries {
+        if config.is_blacklisted(&entry.name) {
+            continue;
+        }
+
         let source_path = dir.join(&entry.name);
 
         if entry.is_dir && depth + 1 < config.max_depth {

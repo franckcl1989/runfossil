@@ -3,6 +3,7 @@
 
 use std::io::{self, Read, Write};
 use std::os::unix::net::UnixStream;
+use std::time::Duration;
 
 const SYSTEM_BUS_PATHS: &[&str] = &[
     "/run/dbus/system_bus_socket",
@@ -25,6 +26,8 @@ pub(crate) fn connect_system_bus() -> io::Result<UnixStream> {
     for path in SYSTEM_BUS_PATHS {
         match UnixStream::connect(path) {
             Ok(stream) => {
+                stream.set_read_timeout(Some(Duration::from_secs(5)))?;
+                stream.set_write_timeout(Some(Duration::from_secs(5)))?;
                 authenticate_unix_fd(&stream)?;
                 return Ok(stream);
             }

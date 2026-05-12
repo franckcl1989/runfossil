@@ -267,7 +267,7 @@ Exit criteria:
   runs are executed separately from the default test gate. **[benchmarks compile]**
 - Capture remains bounded on large hosts. **[bounded by global timeout, per-task
   limits, and traversal limits]**
-- Project-owned Rust code contains no unsafe code. **[verified: 38 source files
+- Project-owned Rust code contains no unsafe code. **[verified: 34 source files
   with `#![forbid(unsafe_code)]`]**
 - No collector executes external commands. **[verified: zero `std::process::Command`
   usage; enforced by clippy.toml]**
@@ -316,3 +316,31 @@ These defaults keep implementation work bounded without reopening product scope:
 - Signal handling must not reintroduce project-owned unsafe code. Graceful
   cancellation on SIGINT/SIGTERM uses a reviewed safe third-party abstraction;
   dependency risk is tracked in the Risk Register.
+
+## Planner-Executor Relationship
+
+The adaptive planner produces `plan.json` with per-coverage-unit scheduling
+decisions (scheduled, limited, skipped_by_policy, not_present, unsupported).
+The `CapturePlanProbes` field records host facts used to derive those decisions.
+
+The capture executor uses a hardcoded task list that maps each L1 source family
+to a single collector function. Each task runs unconditionally within its
+per-task timeout and global byte/time budgets. The executor does not consult
+per-coverage-unit plan decisions at runtime.
+
+This design is an intentional simplification for the baseline release:
+
+- **plan.json is an offline reference**. It records what the planner *would*
+  schedule on this host. Later analysis tools can compare planned coverage
+  against actual manifest outcomes without requiring the original host.
+- **Task execution is bounded anyway**. The per-task timeout, global timeout,
+  per-file byte limits, and per-directory traversal limits already prevent
+  unbounded resource consumption regardless of the planner's decisions.
+- **Future integration path**: A later milestone can make the executor
+  task-construction model directly driven from planned per-unit decisions when
+  the execution model supports per-unit cancellation and budget reallocation.
+
+The executor does respect the probe-level `systemd_detected` flag: when systemd
+is absent, the `service` task is skipped and the `scheduler` task excludes
+systemd timer collection. Other source-absence conditions are handled inside
+individual collectors through bounded file existence checks.
