@@ -388,20 +388,17 @@ mod tests {
     }
 
     #[test]
-    fn deferred_native_is_unsupported() {
+    fn no_deferred_native_tasks_in_plan() {
         let plan = build_plan(small_probe());
         let deferred_tasks: Vec<&PlannedTask> = plan
             .tasks()
             .iter()
-            .filter(|t| {
-                matches!(t.coverage_decision, CoverageDecision::DeferredNative)
-                    && t.decision != PlanDecision::NotPresent
-            })
+            .filter(|t| matches!(t.coverage_decision, CoverageDecision::DeferredNative))
             .collect();
-        assert!(!deferred_tasks.is_empty());
-        for task in deferred_tasks {
-            assert_eq!(task.decision, PlanDecision::Unsupported);
-        }
+        assert!(
+            deferred_tasks.is_empty(),
+            "registry should not produce deferred-native tasks"
+        );
     }
 
     #[test]
@@ -455,15 +452,12 @@ mod tests {
             .filter(|t| t.source == SourceSlug::Container)
             .collect();
         for task in container_tasks {
-            let expected = if task.coverage_decision == CoverageDecision::DeferredNative {
-                PlanDecision::Unsupported
-            } else {
-                PlanDecision::SkippedByPolicy
-            };
             assert_eq!(
-                task.decision, expected,
-                "container task {} expected {:?} but got {:?}",
-                task.id, expected, task.decision
+                task.decision,
+                PlanDecision::SkippedByPolicy,
+                "container task {} expected SkippedByPolicy but got {:?}",
+                task.id,
+                task.decision
             );
         }
     }

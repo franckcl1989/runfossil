@@ -49,22 +49,22 @@ excluded
 | R-015 | The planner must record why work was scheduled, limited, skipped, unsupported, or not present. | specified | Snapshot Specification, Capture Planning Strategy | `plan.json` explains task decisions and skip reasons. |
 | R-016 | Collection must not invoke external commands. | specified | Project Design, Architecture, Safety and Operations, ADR | Collectors do not invoke tools such as `ip`, `ss`, `systemctl`, `journalctl`, `docker`, `smartctl`, or `ipmitool`. |
 | R-017 | Collection must be Rust-native. | specified | Project Design, Architecture, Coverage Decision Matrix | Native Linux interfaces, netlink, sockets, filesystems, and protocols are used instead of command wrappers. |
-| R-018 | Sources requiring native protocol support are not replaced by shell commands. | specified | Coverage Decision Matrix, Safety and Operations, ADR | Such sources are marked `deferred-native` until native support exists. |
+| R-018 | Sources requiring native protocol support are not replaced by shell commands. | specified | Coverage Decision Matrix, Safety and Operations, ADR | Sources without kernel-level interfaces are excluded from kernel-focused scope. |
 | R-019 | `/proc` runtime state is in scope. | specified | Source Taxonomy, Coverage Decision Matrix | `/proc` domains have explicit collection decisions. |
 | R-020 | `/sys` runtime state is in scope. | specified | Source Taxonomy, Coverage Decision Matrix | `/sys` domains have explicit collection decisions and traversal limits. |
 | R-021 | `/run` runtime state is in scope. | specified | Source Taxonomy, Coverage Decision Matrix | Runtime metadata and bounded trees are captured without blind copying. |
 | R-022 | `/dev` runtime device namespace is in scope. | bounded | Source Taxonomy, Coverage Decision Matrix, Safety and Operations | Device nodes are captured as metadata unless explicitly safe as bounded event sources. |
 | R-023 | Kernel ring buffer event windows are in scope. | specified | Source Taxonomy, Coverage Decision Matrix | Bounded non-destructive kernel event windows are planned. |
-| R-024 | System event log windows are in scope only through native support. | deferred | Coverage Decision Matrix, Capture Planning Strategy | Event windows remain `deferred-native` until a native reader exists. |
+| R-024 | System event log windows are out of kernel-focused scope. | excluded | Coverage Decision Matrix, Capture Planning Strategy | Journal/syslog protocol requires a native reader; kernel ring buffer is primary. |
 | R-025 | Service manager state is in scope only through native support. | deferred | Coverage Decision Matrix, Architecture | systemd/service manager data is not collected through `systemctl`. |
 | R-026 | Netlink state is in scope. | specified | Source Taxonomy, Coverage Decision Matrix, Architecture | Link, address, route, neighbor, and other netlink families are native collection targets. |
 | R-027 | Security and audit state is in scope. | bounded | Source Taxonomy, Coverage Decision Matrix | procfs/securityfs-visible state is collected; audit/log windows require native support. |
 | R-028 | User and session runtime state is in scope. | bounded | Source Taxonomy, Coverage Decision Matrix | Runtime session metadata is collected where available without user-stream reads. |
 | R-029 | Scheduler and job runtime state is in scope. | bounded | Source Taxonomy, Coverage Decision Matrix | Runtime state is considered; static schedule configuration is not primary evidence. |
-| R-030 | Time synchronization runtime state is in scope. | bounded | Source Taxonomy, Coverage Decision Matrix | Local clock metadata is collected; service-specific state requires native support. |
+| R-030 | Time synchronization runtime state is in scope (kernel-visible clocks). | bounded | Source Taxonomy, Coverage Decision Matrix | Local clock metadata via /proc and /etc; NTP/chrony protocol state is excluded. |
 | R-031 | Crash dump metadata is in scope. | bounded | Source Taxonomy, Coverage Decision Matrix | Metadata and bounded records are captured; large core/vmcore payloads are not copied by default. |
 | R-032 | Hardware management state is in scope when native safe access exists. | deferred | Source Taxonomy, Coverage Decision Matrix | Vendor CLI-dependent sources are `deferred-native`. |
-| R-033 | Local container runtime state is in scope. | bounded | Source Taxonomy, Coverage Decision Matrix | Host-side procfs/cgroup/namespace evidence is collected; runtime socket APIs are native-only. |
+| R-033 | Local container runtime host-side evidence is in scope. | bounded | Source Taxonomy, Coverage Decision Matrix | Host-side procfs/cgroup/namespace evidence is collected; container daemon APIs are excluded. |
 | R-034 | Kubernetes control-plane state is out of scope. | excluded | Project Design, Source Taxonomy, Coverage Decision Matrix | No Kubernetes API or orchestration control-plane collection is part of core capture. |
 | R-035 | Cloud provider control-plane APIs are out of scope. | excluded | Project Design, Source Taxonomy, Coverage Decision Matrix | No cloud API collection belongs to core capture. |
 | R-036 | Application configuration and business data are out of scope. | excluded | Project Design, Source Taxonomy, Coverage Decision Matrix | Core capture does not target business data or application config. |

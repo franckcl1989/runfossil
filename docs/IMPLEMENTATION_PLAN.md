@@ -211,7 +211,7 @@ Deliverables:
 
 - Runtime socket detection implemented (docker, containerd, crio, runc).
 - Host-side cgroup and namespace container evidence implemented.
-- Docker/containerd/CRI-O native protocol support remains deferred-native.
+- Docker/containerd/CRI-O native protocol support is out of scope (kernel-focused collection only).
 
 Exit criteria (host-side met, protocol remains planned):
 

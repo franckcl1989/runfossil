@@ -41,9 +41,9 @@ accepted    The risk is inherent and handled by documentation or operator policy
 | RK-010 | Large core, vmcore, or kernel memory payloads consume storage or expose sensitive memory. | high | controlled | Metadata-only by default; payload copying is excluded from core capture. | Coverage Decision Matrix |
 | RK-011 | `/dev` reads block or have side effects. | critical | controlled | Device nodes are metadata-only except explicitly bounded event sources. | Coverage Decision Matrix, Safety and Operations |
 | RK-012 | DebugFS, TraceFS, or BPF collection changes kernel behavior. | high | controlled | Do not enable tracing; collect only existing state under strict limits. | Coverage Decision Matrix, Safety and Operations |
-| RK-013 | service/log/journal support depends on command wrappers. | medium | controlled | Mark as deferred-native until Rust-native support exists. | Coverage Decision Matrix |
-| RK-014 | Hardware management requires vendor CLIs or C SDKs. | medium | controlled | Mark as deferred-native until safe native design exists. | Coverage Decision Matrix |
-| RK-015 | Container runtime state is incomplete before native runtime protocols exist. | medium | controlled | Capture host-side procfs, namespace, and cgroup evidence; defer runtime APIs. | Coverage Decision Matrix |
+| RK-013 | service/log/journal support depends on command wrappers. | medium | controlled | Excluded from kernel-focused scope; file-based bounded journal window capture is handled separately. | Coverage Decision Matrix |
+| RK-014 | Hardware management requires vendor CLIs or C SDKs. | medium | controlled | Excluded from kernel-focused scope; sysfs sensor/thermal/hwmon state is captured. | Coverage Decision Matrix |
+| RK-015 | Container runtime state is incomplete before native runtime protocols exist. | medium | controlled | Capture host-side procfs, namespace, and cgroup evidence; container daemon APIs are excluded from kernel-focused scope. | Coverage Decision Matrix |
 | RK-016 | Planner decisions are hard to explain after the fact. | high | controlled | Persist planner probes, budgets, priorities, and skip reasons in `plan.json`. | Snapshot Specification, Capture Planning Strategy |
 | RK-017 | Snapshot layout changes break offline tools. | high | controlled | Treat Snapshot Specification as a compatibility contract. | Snapshot Specification, ADR |
 | RK-018 | Taxonomy and coverage decisions diverge. | medium | controlled | Source Taxonomy owns source boundaries; Coverage Decision Matrix owns decisions. | Source Taxonomy, Coverage Decision Matrix |

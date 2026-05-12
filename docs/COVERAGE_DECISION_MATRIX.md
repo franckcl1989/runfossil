@@ -238,13 +238,13 @@ manifest statuses is maintained in the
 ## System Event Log Store
 
 | Domain | Coverage unit | Decision | Priority | Mode | Rationale |
-|---|---|---:|---:|---|---|
-| System event window | boot, shutdown, daemon, resource warning, system error windows | deferred-native | P3 | native-protocol | Valid target, but must be implemented without `journalctl`. |
-| Kernel event mirror | recent kernel mirror window | deferred-native | P3 | native-protocol | Native log reader required; kernel ring buffer remains primary. |
-| Service event window | service start, stop, restart, failure, exit, watchdog windows | deferred-native | P3 | native-protocol | Native log reader required. |
-| Authentication and security | login, SSH, sudo, auth failure, permission denied windows | deferred-native | P3 | native-protocol | Sensitive event windows; native reader and bounds required. |
-| Container event window | container start, stop, kill, OOM, restart windows | deferred-native | P3 | native-protocol | Runtime-native event support required. |
-| Audit event window | audit denial, syscall denial, privilege event windows | deferred-native | P3 | native-protocol | Native audit/log support required. |
+|---|---|---|---|---|---|
+| System event window | boot, shutdown, daemon, resource warning, system error windows | exclude | P3 | skip | Log store protocol (journal/syslog) requires a native reader; outside kernel-focused scope. File-based bounded journal window capture is handled separately. |
+| Kernel event mirror | recent kernel mirror window | exclude | P3 | skip | Journal protocol support out of scope; kernel ring buffer remains primary. |
+| Service event window | service start, stop, restart, failure, exit, watchdog windows | exclude | P3 | skip | Service event log protocol out of scope. |
+| Authentication and security | login, SSH, sudo, auth failure, permission denied windows | exclude | P3 | skip | Auth event log protocol out of scope. |
+| Container event window | container start, stop, kill, OOM, restart windows | exclude | P3 | skip | Container event log protocol out of scope. |
+| Audit event window | audit denial, syscall denial, privilege event windows | exclude | P3 | skip | Audit event log protocol out of scope. |
 
 ## Service Manager
 
@@ -302,11 +302,11 @@ manifest statuses is maintained in the
 ## Time Synchronization Subsystem
 
 | Domain | Coverage unit | Decision | Priority | Mode | Rationale |
-|---|---|---:|---:|---|---|
-| System clock | wall clock, monotonic clock, boot time, time jump window | collect | P0 | metadata | Essential capture context. |
-| NTP | synchronized state, source, offset, jitter, stratum, leap | deferred-native | P3 | native-protocol | Native NTP/timesync support required. |
-| chrony | tracking, sources, activity | deferred-native | P3 | native-protocol | No `chronyc`; native protocol required. |
-| systemd-timesyncd | timesyncd state | deferred-native | P3 | native-protocol | Native D-Bus/file support required. |
+|---|---|---|---|---|---|
+| System clock | wall clock, monotonic clock, boot time, time jump window | collect | P0 | metadata | Essential capture context via /proc/uptime, /proc/stat (btime), /etc/localtime. |
+| NTP | synchronized state, source, offset, jitter, stratum, leap | exclude | P3 | skip | NTP protocol support out of scope for kernel-focused collection. |
+| chrony | tracking, sources, activity | exclude | P3 | skip | chrony protocol support out of scope. |
+| systemd-timesyncd | timesyncd state | exclude | P3 | skip | systemd-timesyncd D-Bus protocol out of scope; file-based state from /run/systemd/timesync is handled separately. |
 | PTP | clock state, port state, master offset, grandmaster relation | conditional | P3 | bounded-tree | Capture kernel-exposed PTP state where present; protocol support later. |
 
 ## Crash Dump Store
@@ -333,14 +333,14 @@ manifest statuses is maintained in the
 ## Container Runtime
 
 | Domain | Coverage unit | Decision | Priority | Mode | Rationale |
-|---|---|---:|---:|---|---|
-| Runtime daemon | daemon state, socket state, version, error state | deferred-native | P3 | native-socket | Native runtime socket support required; no container CLI. |
-| Container object | list, state, lifecycle, exit, restart metadata | deferred-native | P3 | native-socket | Native Docker/containerd/CRI-O protocol support required. |
+|---|---|---|---|---|---|
+| Runtime daemon | daemon state, socket state, version, error state | exclude | P3 | skip | Container daemon API protocol out of scope for kernel-focused collection. |
+| Container object | list, state, lifecycle, exit, restart metadata | exclude | P3 | skip | Container object enumeration protocol out of scope. |
 | Container process | init process, host PID relation, task state | conditional | P3 | raw-file-set | Host-side procfs evidence can be collected before runtime protocol support. |
 | Container resource | CPU, memory, PID, block I/O, network I/O state | conditional | P3 | bounded-tree | Host cgroup evidence first; runtime API later. |
 | Container namespace | PID, network, mount, IPC, UTS namespace relation | conditional | P3 | symlink-targets | Host-side namespace evidence via procfs. |
 | Container cgroup | container cgroup relation | conditional | P3 | bounded-tree | Host cgroup evidence via `/sys/fs/cgroup`. |
-| Container event / log | recent events, stdout window, stderr window | deferred-native | P3 | native-socket | Native runtime API/log support required and bounded. |
+| Container event / log | recent events, stdout window, stderr window | exclude | P3 | skip | Container log protocol out of scope. |
 
 ## Explicit Exclusions
 

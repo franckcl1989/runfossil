@@ -981,28 +981,6 @@ pub(crate) fn coverage_registry() -> Vec<CoverageUnit> {
     ));
 
     units.push(CoverageUnit::new(
-        "container.daemon",
-        SourceSlug::Container,
-        "daemon",
-        "daemon",
-        CoverageDecision::DeferredNative,
-        Priority::P3,
-        ObjectKind::NativeDump,
-        false,
-    ));
-
-    units.push(CoverageUnit::new(
-        "container.objects",
-        SourceSlug::Container,
-        "objects",
-        "objects",
-        CoverageDecision::DeferredNative,
-        Priority::P3,
-        ObjectKind::NativeDump,
-        false,
-    ));
-
-    units.push(CoverageUnit::new(
         "container.process",
         SourceSlug::Container,
         "process",
@@ -1044,28 +1022,6 @@ pub(crate) fn coverage_registry() -> Vec<CoverageUnit> {
         Priority::P3,
         ObjectKind::BoundedTree,
         true,
-    ));
-
-    units.push(CoverageUnit::new(
-        "logs.system_events",
-        SourceSlug::Logs,
-        "system_events",
-        "system_events",
-        CoverageDecision::DeferredNative,
-        Priority::P3,
-        ObjectKind::EventWindow,
-        false,
-    ));
-
-    units.push(CoverageUnit::new(
-        "time.ntp",
-        SourceSlug::Time,
-        "ntp",
-        "ntp",
-        CoverageDecision::DeferredNative,
-        Priority::P3,
-        ObjectKind::Metadata,
-        false,
     ));
 
     units.push(CoverageUnit::new(
@@ -1480,15 +1436,15 @@ mod tests {
     }
 
     #[test]
-    fn registry_includes_deferred_native_entries() {
+    fn registry_has_no_deferred_native_entries() {
         let units = coverage_registry();
         let deferred: Vec<_> = units
             .iter()
             .filter(|u| u.coverage_decision == CoverageDecision::DeferredNative)
             .collect();
         assert!(
-            !deferred.is_empty(),
-            "registry should include deferred-native entries"
+            deferred.is_empty(),
+            "registry should not contain deferred-native entries"
         );
     }
 
@@ -1571,11 +1527,6 @@ mod tests {
                 .any(|d| *d == CoverageDecision::Conditional)
         );
         assert!(decisions.iter().any(|d| *d == CoverageDecision::Limited));
-        assert!(
-            decisions
-                .iter()
-                .any(|d| *d == CoverageDecision::DeferredNative)
-        );
     }
 
     #[test]
