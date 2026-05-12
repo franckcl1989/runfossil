@@ -1518,7 +1518,8 @@ mod tests {
     }
 
     #[test]
-    fn sys_collector_returns_ok_when_sysfs_absent() -> Result<(), Box<dyn std::error::Error>> {
+    #[ignore = "manual live-host smoke test; touches /sys pseudo-filesystems"]
+    fn sys_collector_live_host_smoke() -> Result<(), Box<dyn std::error::Error>> {
         let d = dir()?;
         let mut store = new_store(&d)?;
         let result = collect_sys(&mut store);
@@ -1532,7 +1533,8 @@ mod tests {
     }
 
     #[test]
-    fn dev_collector_returns_ok_when_dev_absent() -> Result<(), Box<dyn std::error::Error>> {
+    #[ignore = "manual live-host smoke test; touches /dev pseudo-filesystems"]
+    fn dev_collector_live_host_smoke() -> Result<(), Box<dyn std::error::Error>> {
         let d = dir()?;
         let mut store = new_store(&d)?;
         let result = collect_dev(&mut store);
@@ -1543,7 +1545,8 @@ mod tests {
     }
 
     #[test]
-    fn run_collector_returns_ok_when_dirs_absent() -> Result<(), Box<dyn std::error::Error>> {
+    #[ignore = "manual live-host smoke test; touches /run pseudo-filesystems"]
+    fn run_collector_live_host_smoke() -> Result<(), Box<dyn std::error::Error>> {
         let d = dir()?;
         let mut store = new_store(&d)?;
         let result = collect_run(&mut store);
@@ -1592,7 +1595,8 @@ mod tests {
     }
 
     #[test]
-    fn security_collector_returns_ok_when_dirs_absent() -> Result<(), Box<dyn std::error::Error>> {
+    #[ignore = "manual live-host smoke test; touches security pseudo-filesystems"]
+    fn security_collector_live_host_smoke() -> Result<(), Box<dyn std::error::Error>> {
         let d = dir()?;
         let mut store = new_store(&d)?;
         let result = collect_security(&mut store);
@@ -1604,7 +1608,8 @@ mod tests {
     }
 
     #[test]
-    fn scheduler_collector_returns_ok_when_dirs_absent() -> Result<(), Box<dyn std::error::Error>> {
+    #[ignore = "manual live-host smoke test; touches scheduler state directories"]
+    fn scheduler_collector_live_host_smoke() -> Result<(), Box<dyn std::error::Error>> {
         let d = dir()?;
         let mut store = new_store(&d)?;
         let result = collect_scheduler(&mut store);
@@ -1616,7 +1621,8 @@ mod tests {
     }
 
     #[test]
-    fn crash_collector_returns_ok_when_dirs_absent() -> Result<(), Box<dyn std::error::Error>> {
+    #[ignore = "manual live-host smoke test; touches crash dump state directories"]
+    fn crash_collector_live_host_smoke() -> Result<(), Box<dyn std::error::Error>> {
         let d = dir()?;
         let mut store = new_store(&d)?;
         let result = collect_crash(&mut store);
