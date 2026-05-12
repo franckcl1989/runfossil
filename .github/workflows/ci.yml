@@ -44,9 +44,23 @@ jobs:
         run: cargo check --workspace --all-targets --release --locked
 
   test:
-    name: Test
+    name: Test (${{ matrix.package }})
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        package:
+          - runfossil-cli
+          - runfossil-container
+          - runfossil-core
+          - runfossil-fs
+          - runfossil-net
+          - runfossil-pack
+          - runfossil-plan
+          - runfossil-proc
+          - runfossil-service
+          - runfossil-store
     steps:
       - uses: actions/checkout@v4
 
@@ -65,8 +79,8 @@ jobs:
           key: ${{ runner.os }}-stable-cargo-registry-v2-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-stable-cargo-registry-v2-
 
-      - name: cargo test
-        run: cargo test --workspace --locked
+      - name: cargo test ${{ matrix.package }}
+        run: cargo test -p ${{ matrix.package }} --locked -- --nocapture
 
   lint:
     name: Lint
