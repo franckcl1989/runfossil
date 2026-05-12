@@ -170,8 +170,9 @@ A final object outcome recorded in `manifest.json`, such as `captured`,
 
 A numbered delivery phase in the Implementation Plan. Each milestone has
 specific deliverables and exit criteria. Milestones 0 through 9 are currently
-defined, with Milestone 0 complete, Milestone 1 in progress, and Milestones
-2 through 9 planned.
+defined. Milestones 0 through 8 have baseline implementations recorded as
+complete or implemented, and Milestone 9 hardening and release-readiness work is
+in progress.
 
 ### Partial Snapshot
 

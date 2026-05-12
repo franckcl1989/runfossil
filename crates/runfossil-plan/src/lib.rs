@@ -247,6 +247,8 @@ impl CapturePlan {
     pub fn to_json(&self) -> String {
         let mut buf = String::with_capacity(32_768);
         buf.push_str("{\n");
+        buf.push_str(r#"  "schema_version": 1,"#);
+        buf.push('\n');
         buf.push_str(r#"  "planner": ""#);
         json_escape(&self.planner, &mut buf);
         buf.push_str("\",\n");
@@ -392,6 +394,7 @@ mod tests {
     fn empty_plan_to_json_has_planner_field() {
         let plan = CapturePlan::empty();
         let json = plan.to_json();
+        assert!(json.contains(r#""schema_version": 1"#));
         assert!(json.contains(r#""planner""#));
     }
 

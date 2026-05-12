@@ -32,7 +32,7 @@ excluded
 
 | ID | Requirement | Status | Canonical documents | Acceptance criteria |
 |---|---|---:|---|---|
-| R-001 | The project is implemented in Rust. | accepted | Project Design, ADR, Implementation Plan | Workspace skeleton uses Rust as the only implementation language. |
+| R-001 | The project is implemented in Rust. | accepted | Project Design, ADR, Implementation Plan | Workspace code uses Rust as the only implementation language. |
 | R-002 | Rust 1.95 is the baseline toolchain. | specified | README, Project Design, ADR, Implementation Plan | Toolchain and CI target Rust 1.95 or newer compatible stable releases. |
 | R-003 | Project-owned Rust code must be 100% safe code. | specified | Project Design, Safety and Operations, ADR | Every project crate uses `#![forbid(unsafe_code)]`. |
 | R-004 | Third-party dependencies may be used only when justified. | bounded | Project Design, Safety and Operations, ADR | Dependencies are small, reviewable, pinned, and justified when they contain internal unsafe code. |

@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 #![allow(missing_docs, clippy::unwrap_used, clippy::expect_used)]
 
 use std::path::Path;
@@ -80,7 +81,7 @@ fn bench_store_record_and_finalize(c: &mut Criterion) {
                 store.record_object(entry).unwrap();
             }
 
-            store.finalize(&"2".to_string()).unwrap();
+            store.finalize("2").unwrap();
         })
     });
 }

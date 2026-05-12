@@ -9,7 +9,6 @@ members = [
     "crates/runfossil-plan",
     "crates/runfossil-proc",
     "crates/runfossil-service",
-    "crates/runfossil-signal",
     "crates/runfossil-store",
 ]
 resolver = "3"

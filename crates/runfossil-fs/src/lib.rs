@@ -326,85 +326,86 @@ mod tests {
     }
 
     #[test]
-    fn read_file_bounded_returns_content() {
-        let tmp = tempfile::tempdir().expect("tempdir");
+    fn read_file_bounded_returns_content() -> Result<(), Box<dyn std::error::Error>> {
+        let tmp = tempfile::tempdir()?;
         let path = tmp.path().join("test.txt");
-        fs::write(&path, b"hello").expect("write");
+        fs::write(&path, b"hello")?;
 
-        let result =
-            read_file_bounded(&path, BoundedReadLimits::small()).expect("read_file_bounded");
+        let result = read_file_bounded(&path, BoundedReadLimits::small())?;
         assert_eq!(result.content, b"hello");
         assert!(!result.was_truncated);
+        Ok(())
     }
 
     #[test]
-    fn read_file_bounded_detects_truncation() {
-        let tmp = tempfile::tempdir().expect("tempdir");
+    fn read_file_bounded_detects_truncation() -> Result<(), Box<dyn std::error::Error>> {
+        let tmp = tempfile::tempdir()?;
         let path = tmp.path().join("test.txt");
-        fs::write(&path, b"hello world").expect("write");
+        fs::write(&path, b"hello world")?;
 
         let limit = BoundedReadLimits::new(5, 100);
-        let result = read_file_bounded(&path, limit).expect("read_file_bounded");
+        let result = read_file_bounded(&path, limit)?;
         assert_eq!(result.content, b"hello ");
         assert!(result.was_truncated);
+        Ok(())
     }
 
     #[test]
     fn read_file_bounded_returns_not_found_for_missing_file() {
         let missing = Path::new("/nonexistent/file");
-        let err = read_file_bounded(missing, BoundedReadLimits::small()).unwrap_err();
-        assert!(matches!(
-            err,
-            FsError::NotFound(_) | FsError::PermissionDenied(_) | FsError::Io { .. }
-        ));
+        match read_file_bounded(missing, BoundedReadLimits::small()) {
+            Ok(_) => panic!("missing file should not be read successfully"),
+            Err(error) => assert!(matches!(
+                error,
+                FsError::NotFound(_) | FsError::PermissionDenied(_) | FsError::Io { .. }
+            )),
+        }
     }
 
     #[test]
-    fn list_dir_entries_returns_sorted_entries() {
-        let tmp = tempfile::tempdir().expect("tempdir");
-        fs::write(tmp.path().join("b.txt"), b"b").expect("write");
-        fs::write(tmp.path().join("a.txt"), b"a").expect("write");
-        fs::create_dir(tmp.path().join("sub")).expect("mkdir");
+    fn list_dir_entries_returns_sorted_entries() -> Result<(), Box<dyn std::error::Error>> {
+        let tmp = tempfile::tempdir()?;
+        fs::write(tmp.path().join("b.txt"), b"b")?;
+        fs::write(tmp.path().join("a.txt"), b"a")?;
+        fs::create_dir(tmp.path().join("sub"))?;
 
-        let result = list_dir_entries(tmp.path(), BoundedTraversalLimits::bounded_tree())
-            .expect("list_dir_entries");
+        let result = list_dir_entries(tmp.path(), BoundedTraversalLimits::bounded_tree())?;
         let names: Vec<_> = result.entries.iter().map(|e| &*e.name).collect();
         assert_eq!(names, vec!["a.txt", "b.txt", "sub"]);
         assert!(!result.was_truncated);
 
-        let sub_entry = result
-            .entries
-            .iter()
-            .find(|e| e.name == "sub")
-            .expect("sub dir");
-        assert!(sub_entry.is_dir);
+        assert!(result.entries.iter().any(|e| e.name == "sub" && e.is_dir));
+        Ok(())
     }
 
     #[test]
-    fn list_dir_entries_truncates_at_max_files() {
-        let tmp = tempfile::tempdir().expect("tempdir");
-        fs::write(tmp.path().join("a"), b"").expect("write");
-        fs::write(tmp.path().join("b"), b"").expect("write");
-        fs::write(tmp.path().join("c"), b"").expect("write");
+    fn list_dir_entries_truncates_at_max_files() -> Result<(), Box<dyn std::error::Error>> {
+        let tmp = tempfile::tempdir()?;
+        fs::write(tmp.path().join("a"), b"")?;
+        fs::write(tmp.path().join("b"), b"")?;
+        fs::write(tmp.path().join("c"), b"")?;
 
         let limits = BoundedTraversalLimits::new(2, 1, 100);
-        let result = list_dir_entries(tmp.path(), limits).expect("list_dir_entries");
+        let result = list_dir_entries(tmp.path(), limits)?;
         assert_eq!(result.entries.len(), 2);
         assert!(result.was_truncated);
+        Ok(())
     }
 
     #[test]
-    fn list_dir_entries_with_large_count_does_not_truncate_prematurely() {
-        let tmp = tempfile::tempdir().expect("tempdir");
+    fn list_dir_entries_with_large_count_does_not_truncate_prematurely()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let tmp = tempfile::tempdir()?;
         let count = 500;
         for i in 0..count {
-            fs::write(tmp.path().join(format!("file_{i:04}")), b"").expect("write");
+            fs::write(tmp.path().join(format!("file_{i:04}")), b"")?;
         }
 
         let limits = BoundedTraversalLimits::new(count, 1, 5_000);
-        let result = list_dir_entries(tmp.path(), limits).expect("list_dir_entries");
+        let result = list_dir_entries(tmp.path(), limits)?;
         assert_eq!(result.entries.len() as u64, count);
         assert!(!result.was_truncated);
+        Ok(())
     }
 
     #[test]
@@ -415,14 +416,16 @@ mod tests {
     }
 
     #[test]
-    fn read_file_bounded_works_with_max_bytes_larger_than_content() {
-        let tmp = tempfile::tempdir().expect("tempdir");
+    fn read_file_bounded_works_with_max_bytes_larger_than_content()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let tmp = tempfile::tempdir()?;
         let content = &[0u8; 500];
-        fs::write(tmp.path().join("data.bin"), content).expect("write");
+        fs::write(tmp.path().join("data.bin"), content)?;
 
         let limits = BoundedReadLimits::new(600, 100);
-        let result = read_file_bounded(&tmp.path().join("data.bin"), limits).expect("read");
+        let result = read_file_bounded(&tmp.path().join("data.bin"), limits)?;
         assert_eq!(result.content.len(), 500);
         assert!(!result.was_truncated);
+        Ok(())
     }
 }

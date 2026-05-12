@@ -80,181 +80,16 @@ Status: complete.
 
 Deliverables:
 
-- Rust 1.95 workspace with all planned crates.
-- `runfossil-cli` (binary entry point with capture, pack, inspect subcommands).
-- `runfossil-core` (shared domain model and invariants).
-- `runfossil-store` (snapshot directory creation and persistence).
-- `runfossil-plan` (planner model with registry, builder, host probe).
-- `runfossil-fs` (bounded filesystem helpers).
-- `runfossil-proc` (procfs collector with P0/P1/P2/P3 coverage).
-- `runfossil-net` (network and netlink collector).
-- `runfossil-service` (service manager collector with D-Bus protocol).
-- `runfossil-container` (container runtime collector with host-side detection).
-- `runfossil-pack` (post-capture packaging and inspection).
-- Project-wide `#![forbid(unsafe_code)]` on every crate.
-- Bounded concurrent executor with scoped threads and cancel tokens.
-- SIGINT/SIGTERM signal handling via isolated `runfossil-signal` crate.
-- Formatting, lint, build, test, and benchmark commands.
-- CI/CD workflow with check, test, clippy, fmt, and cargo-deny audit.
-- Stress tests and criterion benchmarks.
-
-Exit criteria (all met):
-
-- Workspace builds on Linux.
-- Non-root capture fails early.
-- A minimal capture creates a valid snapshot directory.
-- `CAPTURE_COMPLETE` is written only on successful finalization.
-- Project has no `unsafe_code` outside the signal sandbox crate.
-- No collector executes external commands.
-- Coverage decisions, plan decisions, and manifest statuses remain separate vocabularies.
-
-## Milestone 2: Snapshot Store and Manifest
-
-Status: complete.
-
-Deliverables:
-
-- Directory creation.
-- Atomic file writes.
-- `manifest.json`.
-- `plan.json`.
-- `errors.jsonl`.
-- Metadata files.
-- Object status vocabulary.
-- Partial snapshot behavior.
-
-Exit criteria (all met):
-
-- Interrupted captures leave inspectable partial directories.
-- Manifest records success, failure, skipped, unsupported, timeout, and limit outcomes.
-- Snapshot directory permissions are restrictive.
-
-## Milestone 3: Core /proc and /sys Capture
-
-Status: complete.
-
-Deliverables:
-
-- P0 `/proc` global files (loadavg, meminfo, vmstat, stat, cpuinfo, etc.).
-- P1 process summaries (status, stat, cmdline, environ, ns, fd, limits, io, sched).
-- Basic thread and fd listing (fd, fdinfo, task).
-- Core `/sys` class and subsystem capture (class/net, block, devices, power, cgroup).
-- Cgroup v1/v2 detection and bounded capture.
-- pstore metadata and records where present.
-
-Exit criteria (all met):
-
-- Capture is useful on a standard Linux host without external tools.
-- Process disappearance races are handled cleanly.
-- Large host scale triggers budget limits instead of unbounded traversal.
-
-## Milestone 4: Adaptive Planner
-
-Status: complete.
-
-Deliverables:
-
-- Host probe model (loadavg, pressure, meminfo, stat, scale estimation).
-- Pressure and scale estimation.
-- Priority tiers (P0-P4).
-- Source and task budgets.
-- Conditional deepening rules.
-- Deterministic plan records.
-
-Exit criteria (all met):
-
-- Similar probe inputs produce stable plans.
-- High pressure reduces deep work.
-- Incident signals deepen relevant source families.
-- `plan.json` explains scheduling and skip decisions.
-
-## Milestone 5: Kernel, Network, and Device State
-
-Status: complete.
-
-Deliverables:
-
-- Kernel ring buffer bounded windows.
-- `/proc/net` raw capture (tcp, udp, unix, dev, route, arp, snmp, netstat).
-- Native netlink link, address, route, and neighbor capture.
-- `/dev` metadata and symlink capture (block, mapper, loop, pseudo devices).
-- Block and network device state.
-
-Exit criteria (all met):
-
-- Network and device state can be preserved without `ip`, `ss`, `tc`, or `lsof`.
-- Device nodes are treated as metadata unless explicitly safe to read.
-
-## Milestone 6: Service, Session, Time, and Logs
-
-Status: implemented.
-
-Deliverables:
-
-- Native service manager detection.
-- systemd manager and unit state through custom D-Bus protocol implementation.
-- logind and session runtime state through D-Bus.
-- bounded system event windows through filesystem collection.
-- time synchronization runtime state where supported (uptime, localtime, timesync).
-
-Exit criteria:
-
-- No service or log command execution is used.
-- Unsupported service features are recorded clearly.
-- Native D-Bus implementation replaces `systemctl` and `journalctl`.
-
-## Milestone 7: Container Runtime State
-
-Status: host-side evidence implemented; native protocol deferred.
-
-Deliverables:
-
-- Runtime socket detection implemented (docker, containerd, crio, runc).
-- Host-side cgroup and namespace container evidence implemented.
-- Docker/containerd/CRI-O native protocol support is out of scope (kernel-focused collection only).
-
-Exit criteria (host-side met, protocol remains planned):
-
-- Host-side container evidence is available without invoking container CLIs.
-- Container state is collected from procfs, cgroupfs, and namespace evidence.
-
-## Milestone 8: Packaging and Inspection
-
-Status: complete.
-
-Deliverables:
-
-- `runfossil pack <snapshot-dir>` producing `.tar.zst` archives.
-- Archive integrity metadata (SHA-256, compression format, size).
-- `runfossil inspect <snapshot-dir>` offline validation.
-- Snapshot completeness checks.
-- Manifest and plan validation.
-
-Exit criteria (all met):
-
-- Packaging preserves raw evidence exactly.
-- Inspection can summarize complete and partial snapshots offline.
-
-## Milestone 9: Hardening
-
-Status: in progress.
-
-Deliverables:
-
-- Stress tests for bounded limits (10k manifest entries, concurrent writes, large snapshots).
-
-- Rust 1.95 workspace with all planned crates.
-- `runfossil-cli` (binary entry point).
-- `runfossil-core` (shared domain model and invariants).
-- `runfossil-store` (snapshot directory creation and persistence).
-- `runfossil-plan` (planner model skeleton).
-- `runfossil-fs` (bounded filesystem helpers).
-- `runfossil-proc` (procfs collector skeleton).
-- `runfossil-net` (network and netlink collector skeleton).
-- `runfossil-service` (service manager collector skeleton).
-- `runfossil-container` (container runtime collector skeleton).
-- `runfossil-pack` (post-capture packaging skeleton).
-- Project-wide `#![forbid(unsafe_code)]` on every crate.
+- Rust 1.95 workspace with planned crates.
+- `runfossil-cli` binary entry point.
+- `runfossil-core` shared domain model and invariants.
+- `runfossil-store` snapshot directory and manifest foundation.
+- `runfossil-plan` planner model foundation.
+- `runfossil-fs` bounded filesystem helper foundation.
+- `runfossil-proc`, `runfossil-net`, `runfossil-service`, and
+  `runfossil-container` collector crate boundaries.
+- `runfossil-pack` post-capture packaging and inspection crate boundary.
+- Project-wide `#![forbid(unsafe_code)]` on every project-owned Rust crate.
 - Formatting, lint, build, and test commands.
 
 Exit criteria:
@@ -263,8 +98,14 @@ Exit criteria:
 - Non-root capture fails early.
 - A minimal capture creates a valid snapshot directory.
 - `CAPTURE_COMPLETE` is written only on successful finalization.
+- Project-owned Rust code contains no unsafe code.
+- No collector executes external commands.
+- Coverage decisions, plan decisions, and manifest statuses remain separate
+  vocabularies.
 
 ## Milestone 2: Snapshot Store and Manifest
+
+Status: complete.
 
 Deliverables:
 
@@ -286,6 +127,8 @@ Exit criteria:
 
 ## Milestone 3: Core /proc and /sys Capture
 
+Status: complete.
+
 Deliverables:
 
 - P0 `/proc` global files.
@@ -293,7 +136,7 @@ Deliverables:
 - Basic thread and fd listing.
 - Core `/sys` class and subsystem capture.
 - Cgroup v1/v2 detection and bounded capture.
-- pstore metadata and records where present.
+- Pstore metadata and records where present.
 
 Exit criteria:
 
@@ -302,6 +145,8 @@ Exit criteria:
 - Large host scale triggers budget limits instead of unbounded traversal.
 
 ## Milestone 4: Adaptive Planner
+
+Status: complete.
 
 Deliverables:
 
@@ -321,57 +166,69 @@ Exit criteria:
 
 ## Milestone 5: Kernel, Network, and Device State
 
+Status: complete.
+
 Deliverables:
 
 - Kernel ring buffer bounded windows.
 - `/proc/net` raw capture.
 - Native netlink link, address, route, and neighbor capture.
-- Socket diagnostic capture where feasible.
 - `/dev` metadata and symlink capture.
 - Block and network device state.
 
 Exit criteria:
 
-- Network and device state can be preserved without `ip`, `ss`, `tc`, or `lsof`.
+- Network and device state can be preserved without `ip`, `ss`, `tc`, or
+  `lsof`.
 - Device nodes are treated as metadata unless explicitly safe to read.
 
 ## Milestone 6: Service, Session, Time, and Logs
 
+Status: implemented; hardening continues in Milestone 9.
+
 Deliverables:
 
 - Native service manager detection.
-- systemd manager and unit state through native protocol support.
-- logind and session runtime state where supported.
-- bounded system event windows through native implementation.
-- time synchronization runtime state where supported.
+- systemd manager and unit state through custom D-Bus protocol implementation.
+- logind and session runtime state through D-Bus.
+- Bounded system event windows through filesystem collection where supported.
+- Time synchronization runtime state where supported.
 
 Exit criteria:
 
 - No service or log command execution is used.
 - Unsupported service features are recorded clearly.
+- Native D-Bus implementation replaces `systemctl`, `loginctl`, and
+  `journalctl` for in-scope service/session capture.
 
 ## Milestone 7: Container Runtime State
+
+Status: host-side evidence implemented; daemon API protocols excluded from the
+current kernel-focused scope.
 
 Deliverables:
 
 - Runtime socket detection.
-- Native Docker/containerd/CRI-O support where feasible.
-- Container object, process, cgroup, namespace, and resource evidence.
-- Bounded container event and log windows.
+- Host-side cgroup and namespace container evidence.
+- Container process, resource, namespace, and cgroup evidence from procfs and
+  cgroupfs.
 
 Exit criteria:
 
-- Host-side container evidence is available even before all runtime protocols are
-  complete.
-- Container state is collected without invoking container CLIs.
+- Host-side container evidence is available without invoking container CLIs.
+- Container state is collected from procfs, cgroupfs, and namespace evidence.
+- Docker, containerd, and CRI-O daemon API enumeration remains out of core scope
+  unless the coverage matrix is changed first.
 
 ## Milestone 8: Packaging and Inspection
 
+Status: complete.
+
 Deliverables:
 
-- `runfossil pack <snapshot-dir>`.
+- `runfossil pack <snapshot-dir>` producing `.tar.zst` archives.
 - Archive integrity metadata.
-- `runfossil inspect <snapshot-dir>`.
+- `runfossil inspect <snapshot-dir>` offline validation.
 - Snapshot completeness checks.
 - Manifest and plan validation.
 
@@ -380,27 +237,47 @@ Exit criteria:
 - Packaging preserves raw evidence exactly.
 - Inspection can summarize complete and partial snapshots offline.
 
-## Milestone 9: Hardening
+## Milestone 9: Hardening and Release Readiness
 
 Status: in progress.
 
 Deliverables:
 
-- Stress tests for bounded limits (10k manifest entries, concurrent writes, large snapshots).
-- Benchmark suite for store and pack operations (criterion).
-- CI/CD pipeline with dependency caching and cargo-deny audit.
-- Release profile optimizations (LTO, single codegen-unit, panic=abort, strip).
-- Signal handling integration (SIGINT/SIGTERM with graceful cancellation).
-- Coverage registry updated to reflect implemented native protocol support.
+- Stress tests for bounded limits, large manifests, concurrent writes, and large
+  snapshots.
+- Benchmark suite for store and pack operations.
+- CI pipeline with check, test, clippy, fmt, release check, and cargo-deny audit.
+- Release profile optimizations for a small single binary.
+- Coverage registry alignment with implemented native and filesystem-backed
+  collectors.
+- Documentation-to-code consistency audit before release.
+- Production-readiness validation report covering safety, performance,
+  compatibility, and known limitations.
+- Safe SIGINT/SIGTERM cancellation through a reviewed third-party signal
+  abstraction, without project-owned unsafe code.
 
 Exit criteria:
 
+- `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`,
+  `cargo check --workspace --all-targets`, and `cargo test --workspace` pass
+  locally and in CI.
+- Benchmarks compile under `cargo check --workspace --all-targets`; performance
+  runs are executed separately from the default test gate.
 - Capture remains bounded on large hosts.
-- No project-owned unsafe code exists outside the signal sandbox crate.
+- Project-owned Rust code contains no unsafe code.
 - No collector executes external commands.
 - Snapshot format remains backward-compatible.
 - Benchmarks exist for performance-sensitive operations.
 - Stress tests verify bounded behavior under load.
+- Static release artifacts are built for `x86_64-unknown-linux-musl` and
+  verified to have no dynamic runtime dependencies.
+- Release artifacts have checksum and signature verification records.
+- Root production-like capture, cross-distribution compatibility, and benchmark
+  runs are recorded in the release readiness report.
+- README, AGENTS, AI docs, implementation plan, glossary, requirements, risks,
+  and code comments do not claim stale milestone state.
+- Release notes distinguish implemented behavior, exclusions, deferred work, and
+  validation actually run.
 
 ## Resolved Design Defaults
 
@@ -417,7 +294,10 @@ These defaults keep implementation work bounded without reopening product scope:
   source.
 - Initial netlink scope is link, address, route, and neighbor state. Socket
   diagnostic, conntrack, traffic control, and XFRM state remain conditional.
-- Container delivery starts with host-side procfs, namespace, and cgroup evidence,
-  then adds native runtime protocols incrementally.
+- Container delivery is host-side procfs, namespace, and cgroup evidence unless
+  the coverage matrix later accepts native daemon protocols.
 - Hardware management beyond Linux-exposed `/sys` state is deferred until core
   filesystem, procfs, netlink, and snapshot-store behavior is stable.
+- Signal handling must not reintroduce project-owned unsafe code. Graceful
+  cancellation on SIGINT/SIGTERM uses a reviewed safe third-party abstraction;
+  dependency risk is tracked in the Risk Register.

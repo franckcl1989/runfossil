@@ -223,6 +223,7 @@ fn archive_metadata_json(metadata: &ArchiveMetadata) -> String {
 }
 
 #[cfg(test)]
+#[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
     use super::*;
     use runfossil_store::{META_DIR, RAW_DIR};

@@ -31,6 +31,7 @@ Use this bundle for any non-trivial project change:
 | Review documentation readiness before implementation | Documentation Readiness Gate, Design Review Checklist, Requirements Traceability, Risk Register, ADR, Glossary | Any document that fails the readiness gate |
 | Prepare AI-assisted implementation work | AI Development Guide, Documentation Readiness Gate, Design Review Checklist, AI Skill Specs, AI Prompt Library, AGENTS.md | AI docs, Implementation Plan, Design Review Checklist, Documentation Readiness Gate |
 | Manage `.codex/` or `.agents/` configuration | AGENTS.md, AI Development Guide, AI Skill Specs | AGENTS.md, AI Context Index, AI Development Guide, AI Skill Specs |
+| Change release hardening, static builds, dependency audit, production validation, or artifact signing | Implementation Plan, Safety and Operations, Risk Register, Release Readiness | Implementation Plan, Risk Register, Release Readiness, README |
 
 ## Context Bundles
 

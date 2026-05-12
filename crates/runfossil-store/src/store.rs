@@ -3,7 +3,7 @@
 
 use std::path::{Path, PathBuf};
 
-use runfossil_core::{ManifestStatus, SourceSlug};
+use runfossil_core::{ManifestStatus, SourceSlug, validate_relative_artifact_path};
 
 use crate::manifest::ManifestEntry;
 use crate::{
@@ -91,8 +91,9 @@ impl ErrorLogEntry {
 ///
 /// Created once per capture. Manages the snapshot directory, manifest entries,
 /// error logging, and partial snapshot behavior. `CAPTURE_COMPLETE` is written
-/// only on [`finalize`](Self::finalize). If the store is dropped without
-/// finalization, the snapshot directory remains as partial evidence.
+/// only on [`finalize`](Self::finalize). If the store is dropped without being
+/// finalized or closed as partial, the snapshot directory remains as partial
+/// evidence.
 #[derive(Debug)]
 pub struct SnapshotStore {
     snapshot_dir: PathBuf,
@@ -106,7 +107,8 @@ impl SnapshotStore {
     /// returns an open store session.
     ///
     /// The caller owns the store and must call [`finalize`](Self::finalize) to
-    /// complete the snapshot. If the store is dropped without finalization, the
+    /// complete the snapshot or [`close_partial`](Self::close_partial) to write
+    /// a partial manifest. If the store is dropped without either call, the
     /// directory remains as a partial snapshot.
     pub fn create(
         snapshot_dir: impl Into<PathBuf>,
@@ -156,7 +158,8 @@ impl SnapshotStore {
     }
 
     /// Records a manifest object entry in memory. Entries are written to
-    /// `manifest.json` when [`finalize`](Self::finalize) is called.
+    /// `manifest.json` when [`finalize`](Self::finalize) or
+    /// [`close_partial`](Self::close_partial) is called.
     pub fn record_object(&mut self, entry: ManifestEntry) -> Result<(), StoreError> {
         if self.finalized {
             return Err(StoreError::AlreadyFinalized);
@@ -182,7 +185,14 @@ impl SnapshotStore {
         artifact_path: impl AsRef<Path>,
         contents: &[u8],
     ) -> Result<(), StoreError> {
-        let full_path = self.snapshot_dir.join(artifact_path.as_ref());
+        let artifact_path = artifact_path.as_ref();
+        validate_relative_artifact_path(artifact_path).map_err(|_| {
+            StoreError::InvalidOutputPath {
+                context: "write raw file",
+            }
+        })?;
+
+        let full_path = self.snapshot_dir.join(artifact_path);
         if let Some(parent) = full_path.parent()
             && !parent.exists()
         {
@@ -201,7 +211,12 @@ impl SnapshotStore {
             return Err(StoreError::AlreadyFinalized);
         }
 
-        let manifest_json = build_manifest_json(&self.metadata, &self.manifest_entries, true);
+        let manifest_json = build_manifest_json(
+            &self.metadata,
+            &self.manifest_entries,
+            finished_at_unix_ns,
+            true,
+        );
         write_atomic(&self.snapshot_dir.join(MANIFEST_FILE), &manifest_json)?;
 
         write_atomic(
@@ -210,6 +225,33 @@ impl SnapshotStore {
         )?;
 
         write_atomic(&self.snapshot_dir.join(COMPLETE_MARKER), "")?;
+
+        self.finalized = true;
+        Ok(())
+    }
+
+    /// Closes the snapshot as partial: writes the current `manifest.json` with
+    /// `complete: false` and updates `runtime.json`, but deliberately does not
+    /// create `CAPTURE_COMPLETE`.
+    ///
+    /// After partial close, further writes are rejected.
+    pub fn close_partial(&mut self, finished_at_unix_ns: &str) -> Result<(), StoreError> {
+        if self.finalized {
+            return Err(StoreError::AlreadyFinalized);
+        }
+
+        let manifest_json = build_manifest_json(
+            &self.metadata,
+            &self.manifest_entries,
+            finished_at_unix_ns,
+            false,
+        );
+        write_atomic(&self.snapshot_dir.join(MANIFEST_FILE), &manifest_json)?;
+
+        write_atomic(
+            &self.snapshot_dir.join(META_DIR).join("runtime.json"),
+            &partial_runtime_json(&self.metadata, finished_at_unix_ns),
+        )?;
 
         self.finalized = true;
         Ok(())
@@ -258,19 +300,36 @@ fn initial_runtime_json(metadata: &SnapshotMetadata) -> String {
 }
 
 fn final_runtime_json(metadata: &SnapshotMetadata, finished_at_unix_ns: &str) -> String {
+    runtime_json(metadata, Some(finished_at_unix_ns), true)
+}
+
+fn partial_runtime_json(metadata: &SnapshotMetadata, finished_at_unix_ns: &str) -> String {
+    runtime_json(metadata, Some(finished_at_unix_ns), false)
+}
+
+fn runtime_json(
+    metadata: &SnapshotMetadata,
+    finished_at_unix_ns: Option<&str>,
+    complete: bool,
+) -> String {
+    let finished_json = match finished_at_unix_ns {
+        Some(timestamp) => format!("\"{}\"", json_escape(timestamp)),
+        None => "null".to_string(),
+    };
     format!(
         concat!(
             "{{\n",
             "  \"tool\": \"runfossil\",\n",
             "  \"tool_version\": \"{}\",\n",
             "  \"started_at_unix_ns\": \"{}\",\n",
-            "  \"finished_at_unix_ns\": \"{}\",\n",
-            "  \"complete\": true\n",
+            "  \"finished_at_unix_ns\": {},\n",
+            "  \"complete\": {}\n",
             "}}\n"
         ),
         json_escape(&metadata.tool_version),
         json_escape(&metadata.started_at_unix_ns),
-        json_escape(finished_at_unix_ns)
+        finished_json,
+        complete
     )
 }
 
@@ -278,7 +337,7 @@ fn initial_capabilities_json() -> String {
     concat!(
         "{\n",
         "  \"schema_version\": 1,\n",
-        "  \"note\": \"milestone 2 skeleton; source probing is implemented in later milestones\"\n",
+        "  \"note\": \"baseline capability summary; detailed host probes are recorded in plan.json\"\n",
         "}\n"
     )
     .to_string()
@@ -288,7 +347,7 @@ fn initial_limits_json() -> String {
     concat!(
         "{\n",
         "  \"schema_version\": 1,\n",
-        "  \"note\": \"milestone 2 skeleton; capture budgets are implemented in later milestones\"\n",
+        "  \"note\": \"baseline limit summary; task limits are recorded in plan.json and manifest entries\"\n",
         "}\n"
     )
     .to_string()
@@ -298,7 +357,7 @@ fn initial_plan_json() -> String {
     concat!(
         "{\n",
         "  \"schema_version\": 1,\n",
-        "  \"planner\": \"milestone-2-skeleton\",\n",
+        "  \"planner\": \"initializing\",\n",
         "  \"probes\": {},\n",
         "  \"pressure\": {},\n",
         "  \"tasks\": []\n",
@@ -310,6 +369,7 @@ fn initial_plan_json() -> String {
 fn build_manifest_json(
     metadata: &SnapshotMetadata,
     entries: &[ManifestEntry],
+    finished_at_unix_ns: &str,
     complete: bool,
 ) -> String {
     let objects_json = entries
@@ -339,7 +399,7 @@ fn build_manifest_json(
         ),
         json_escape(&metadata.tool_version),
         json_escape(&metadata.started_at_unix_ns),
-        json_escape(&metadata.started_at_unix_ns),
+        json_escape(finished_at_unix_ns),
         complete,
         json_escape(&metadata.host.hostname),
         json_escape(&metadata.host.boot_id),
@@ -385,8 +445,8 @@ mod tests {
     }
 
     #[test]
-    fn create_writes_initial_skeleton() -> Result<(), StoreError> {
-        let dir = unique_test_dir("create-skeleton");
+    fn create_writes_initial_control_files() -> Result<(), StoreError> {
+        let dir = unique_test_dir("create-control-files");
         let metadata = test_metadata();
 
         let store = SnapshotStore::create(&dir, metadata)?;
@@ -431,6 +491,7 @@ mod tests {
             .map_err(|e| StoreError::io("read manifest", e))?;
         assert!(manifest_content.contains("\"id\": \"proc.system.stat\""));
         assert!(manifest_content.contains("\"status\": \"captured\""));
+        assert!(manifest_content.contains("\"finished_at_unix_ns\": \"99\""));
         assert!(manifest_content.contains("\"complete\": true"));
 
         fs::remove_dir_all(&dir).map_err(|e| StoreError::io("cleanup", e))?;
@@ -507,6 +568,53 @@ mod tests {
         assert!(dir.join(ERRORS_FILE).is_file());
         assert!(!dir.join(COMPLETE_MARKER).is_file());
 
+        fs::remove_dir_all(&dir).map_err(|e| StoreError::io("cleanup", e))?;
+        Ok(())
+    }
+
+    #[test]
+    fn close_partial_writes_incomplete_manifest_without_completion_marker() -> Result<(), StoreError>
+    {
+        let dir = unique_test_dir("close-partial");
+        let metadata = test_metadata();
+
+        let mut store = SnapshotStore::create(&dir, metadata)?;
+
+        store.record_object(ManifestEntry::new(
+            "proc.system.uptime",
+            SourceSlug::Proc,
+            "system",
+            "/proc/uptime",
+            ObjectKind::File,
+            ManifestStatus::Captured,
+        ))?;
+        store.close_partial("77")?;
+
+        assert!(dir.join(MANIFEST_FILE).is_file());
+        assert!(!dir.join(COMPLETE_MARKER).is_file());
+
+        let manifest = fs::read_to_string(dir.join(MANIFEST_FILE))
+            .map_err(|e| StoreError::io("read manifest", e))?;
+        assert!(manifest.contains("\"finished_at_unix_ns\": \"77\""));
+        assert!(manifest.contains("\"complete\": false"));
+        assert!(manifest.contains("\"id\": \"proc.system.uptime\""));
+
+        let runtime = fs::read_to_string(dir.join(META_DIR).join("runtime.json"))
+            .map_err(|e| StoreError::io("read runtime", e))?;
+        assert!(runtime.contains("\"finished_at_unix_ns\": \"77\""));
+        assert!(runtime.contains("\"complete\": false"));
+
+        let result = store.record_object(ManifestEntry::new(
+            "late.entry",
+            SourceSlug::Proc,
+            "system",
+            "/late",
+            ObjectKind::File,
+            ManifestStatus::Captured,
+        ));
+        assert!(matches!(result, Err(StoreError::AlreadyFinalized)));
+
+        drop(store);
         fs::remove_dir_all(&dir).map_err(|e| StoreError::io("cleanup", e))?;
         Ok(())
     }
@@ -616,6 +724,21 @@ mod tests {
         assert!(file_path.is_file());
         let contents = fs::read_to_string(&file_path).map_err(|e| StoreError::io("read", e))?;
         assert_eq!(contents, "cpu  0 0 0\n");
+
+        drop(store);
+        fs::remove_dir_all(&dir).map_err(|e| StoreError::io("cleanup", e))?;
+        Ok(())
+    }
+
+    #[test]
+    fn write_raw_file_rejects_parent_paths() -> Result<(), StoreError> {
+        let dir = unique_test_dir("raw-file-parent");
+        let metadata = test_metadata();
+
+        let store = SnapshotStore::create(&dir, metadata)?;
+        let result = store.write_raw_file("../outside", b"bad");
+
+        assert!(matches!(result, Err(StoreError::InvalidOutputPath { .. })));
 
         drop(store);
         fs::remove_dir_all(&dir).map_err(|e| StoreError::io("cleanup", e))?;

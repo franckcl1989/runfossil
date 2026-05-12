@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 #![allow(missing_docs, clippy::unwrap_used, clippy::expect_used)]
 use std::fs;
 use std::path::Path;
@@ -45,7 +46,7 @@ fn create_test_snapshot(base: &Path) {
         store.record_object(entry).unwrap();
     }
 
-    store.finalize(&"2".to_string()).unwrap();
+    store.finalize("2").unwrap();
 }
 
 fn bench_pack_small(c: &mut Criterion) {
@@ -104,7 +105,7 @@ fn bench_pack_large(c: &mut Criterion) {
             .with_limits(ObjectLimits::new(65536, 200, 1, 0));
             store.record_object(entry).unwrap();
         }
-        store.finalize(&"2".to_string()).unwrap();
+        store.finalize("2").unwrap();
     }
 
     c.bench_function("pack_500_files", |b| {

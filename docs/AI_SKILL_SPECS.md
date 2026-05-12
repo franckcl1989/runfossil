@@ -201,10 +201,10 @@ Output:
 
 Validation:
 
-- run `cargo check`, `cargo fmt --check`, `cargo clippy --workspace -- -D warnings`;
+- run `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`,
+  `cargo check --workspace --all-targets`, and `cargo test --workspace`;
 - verify no unsafe code in project crates;
 - verify `clippy.toml` disallowed methods still reject `Command`;
-- run `cargo test`.
 
 ## runfossil-ai-config-maintainer
 

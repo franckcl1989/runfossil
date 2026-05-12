@@ -98,7 +98,7 @@ impl fmt::Display for ExecutorError {
         match self {
             Self::TaskFailed { name, source } => write!(f, "collector '{name}' failed: {source}"),
             Self::GlobalTimeout => f.write_str("global capture timeout exceeded"),
-            Self::Cancelled => f.write_str("capture cancelled by signal"),
+            Self::Cancelled => f.write_str("capture cancelled"),
         }
     }
 }
@@ -227,6 +227,7 @@ pub(crate) fn run_capture_tasks(
 }
 
 #[cfg(test)]
+#[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
     use runfossil_core::EffectiveUid;
     use runfossil_store::{HostMetadata, SnapshotMetadata, SnapshotStore, StoreError};

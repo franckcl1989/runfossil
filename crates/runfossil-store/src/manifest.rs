@@ -58,9 +58,9 @@ impl ObjectLimits {
         }
     }
 
-    /// Returns default object limits for skeleton use.
+    /// Returns default object limits for small file-like evidence.
     #[must_use]
-    pub const fn default_for_skeleton() -> Self {
+    pub const fn default_for_small_file() -> Self {
         Self {
             max_bytes: 1_048_576,
             timeout_ms: 50,
@@ -134,7 +134,7 @@ impl ManifestEntry {
             started_at_unix_ns: None,
             finished_at_unix_ns: None,
             elapsed_us: None,
-            limits: ObjectLimits::default_for_skeleton(),
+            limits: ObjectLimits::default_for_small_file(),
             reason: None,
         }
     }
@@ -394,8 +394,8 @@ mod tests {
     }
 
     #[test]
-    fn object_limits_default_for_skeleton() {
-        let limits = ObjectLimits::default_for_skeleton();
+    fn object_limits_default_for_small_file() {
+        let limits = ObjectLimits::default_for_small_file();
         assert_eq!(limits.max_bytes, 1_048_576);
         assert_eq!(limits.timeout_ms, 50);
         assert_eq!(limits.max_files, 1);

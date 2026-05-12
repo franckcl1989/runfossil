@@ -48,6 +48,7 @@ agents should start from [AGENTS.md](AGENTS.md) for all repository work.
 - [Documentation Readiness Review](docs/DOCUMENTATION_READINESS_REVIEW.md)
 - [Architectural Decision Record](docs/ARCHITECTURAL_DECISION_RECORD.md)
 - [Implementation Plan](docs/IMPLEMENTATION_PLAN.md)
+- [Release Readiness](docs/RELEASE_READINESS.md)
 - [AI Context Index](docs/AI_CONTEXT_INDEX.md)
 - [AI Development Guide](docs/AI_DEVELOPMENT_GUIDE.md)
 - [AI Skill Specs](docs/AI_SKILL_SPECS.md)
@@ -55,9 +56,11 @@ agents should start from [AGENTS.md](AGENTS.md) for all repository work.
 
 ## Current Status
 
-The repository has moved from the documentation-only design phase into Milestone
-1 implementation. A Rust 1.95 workspace skeleton and initial crate boundaries are
-now present.
+The repository has moved from the documentation-only design phase through the
+baseline implementation milestones. Milestones 1 through 8 have working Rust
+implementations for the workspace, snapshot store, planner, core collectors,
+packaging, and inspection. Milestone 9 hardening and release-readiness work is
+in progress.
 
 The design baseline defines behavioral contracts, output format, collection
 boundaries, vocabulary mappings, safety policy, and implementation constraints
@@ -67,8 +70,9 @@ Milestone 0 passed the [Documentation Readiness Gate](docs/DOCUMENTATION_READINE
 and the [Design Review Checklist](docs/DESIGN_REVIEW_CHECKLIST.md) before code
 was introduced.
 
-The current readiness result is recorded in the
-[Documentation Readiness Review](docs/DOCUMENTATION_READINESS_REVIEW.md).
+The historical pre-implementation readiness result is recorded in the
+[Documentation Readiness Review](docs/DOCUMENTATION_READINESS_REVIEW.md). It
+does not replace the Milestone 9 release-readiness validation still in progress.
 
 AI tools should start from [AGENTS.md](AGENTS.md) and use the
 [AI Context Index](docs/AI_CONTEXT_INDEX.md) to choose task-specific design

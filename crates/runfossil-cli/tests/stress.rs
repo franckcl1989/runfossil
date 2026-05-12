@@ -1,4 +1,6 @@
-#![allow(missing_docs)]
+#![forbid(unsafe_code)]
+#![allow(missing_docs, clippy::expect_used, clippy::unwrap_used)]
+
 #[cfg(test)]
 mod stress {
     use std::collections::HashMap;
@@ -13,8 +15,6 @@ mod stress {
         ErrorLogEntry, HashRecord, HostMetadata, ManifestEntry, ObjectLimits, SnapshotMetadata,
         SnapshotStore,
     };
-    use tempfile;
-
     fn test_metadata() -> SnapshotMetadata {
         SnapshotMetadata {
             tool_version: "0.1.0".into(),
@@ -58,7 +58,7 @@ mod stress {
             store.record_object(entry).expect("record entry");
         }
 
-        store.finalize(&"2".to_string()).expect("finalize");
+        store.finalize("2").expect("finalize");
 
         let manifest_path = d.path().join("snapshot/manifest.json");
         let manifest = fs::read_to_string(&manifest_path).expect("read manifest");
@@ -106,7 +106,7 @@ mod stress {
             .expect("unwrap arc")
             .into_inner()
             .expect("unwrap mutex");
-        store.finalize(&"2".to_string()).expect("finalize");
+        store.finalize("2").expect("finalize");
 
         let manifest_path = d.path().join("snapshot/manifest.json");
         let manifest = fs::read_to_string(&manifest_path).expect("read manifest");
@@ -129,7 +129,7 @@ mod stress {
             store.log_error(&error_entry).expect("log error");
         }
 
-        store.finalize(&"2".to_string()).expect("finalize");
+        store.finalize("2").expect("finalize");
 
         let errors_path = d.path().join("snapshot/errors.jsonl");
         let errors = fs::read_to_string(&errors_path).expect("read errors");
@@ -166,7 +166,7 @@ mod stress {
                 store.record_object(entry).expect("record entry");
             }
 
-            store.finalize(&"2".to_string()).expect("finalize");
+            store.finalize("2").expect("finalize");
         }
 
         let metadata = runfossil_pack::pack_snapshot(&snapshot_dir).expect("pack snapshot");
@@ -217,7 +217,7 @@ mod stress {
                 store.record_object(entry).expect("record entry");
             }
 
-            store.finalize(&"2".to_string()).expect("finalize");
+            store.finalize("2").expect("finalize");
         }
 
         let archive_metadata = runfossil_pack::pack_snapshot(&snapshot_dir).expect("pack snapshot");
@@ -259,7 +259,7 @@ mod stress {
                 store.record_object(entry).expect("record entry");
             }
 
-            store.finalize(&"2".to_string()).expect("finalize");
+            store.finalize("2").expect("finalize");
         }
 
         let archive_metadata = runfossil_pack::pack_snapshot(&snapshot_dir).expect("pack snapshot");
@@ -340,7 +340,7 @@ mod stress {
             store.record_object(entry).expect("record entry");
         }
 
-        store.finalize(&"2".to_string()).expect("finalize");
+        store.finalize("2").expect("finalize");
 
         let manifest_path = d.path().join("snapshot/manifest.json");
         let manifest = fs::read_to_string(&manifest_path).expect("read manifest");
@@ -378,7 +378,7 @@ mod stress {
             store.record_object(entry).expect("record entry");
         }
 
-        store.finalize(&"2".to_string()).expect("finalize");
+        store.finalize("2").expect("finalize");
 
         let manifest_path = d.path().join("snapshot/manifest.json");
         let manifest = fs::read_to_string(&manifest_path).expect("read manifest");

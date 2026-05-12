@@ -5,6 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+publish = false
 
 [[bin]]
 name = "runfossil"
@@ -19,7 +20,9 @@ runfossil-plan = { path = "../runfossil-plan" }
 runfossil-proc = { path = "../runfossil-proc" }
 runfossil-service = { path = "../runfossil-service" }
 runfossil-store = { path = "../runfossil-store" }
-runfossil-signal = { path = "../runfossil-signal" }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+nix = { version = "0.31", default-features = false, features = ["signal"] }
 
 [lints]
 workspace = true

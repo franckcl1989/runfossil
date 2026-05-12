@@ -1,5 +1,11 @@
 #![forbid(unsafe_code)]
-#![allow(missing_docs, unreachable_pub, dead_code)]
+#![allow(
+    missing_docs,
+    unreachable_pub,
+    dead_code,
+    clippy::expect_used,
+    clippy::unwrap_used
+)]
 
 use std::fs;
 use std::path::Path;

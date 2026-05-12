@@ -1,5 +1,10 @@
 #![forbid(unsafe_code)]
-#![allow(missing_docs, unreachable_pub)]
+#![allow(
+    missing_docs,
+    unreachable_pub,
+    clippy::expect_used,
+    clippy::unwrap_used
+)]
 
 mod common;
 
@@ -44,7 +49,7 @@ fn pack_and_inspect_roundtrip() {
 
     assert!(meta.archive_path.exists());
     assert!(meta.archive_path.metadata().expect("metadata").len() > 0);
-    assert_eq!(meta.snapshot_was_complete, true);
+    assert!(meta.snapshot_was_complete);
 
     let report = runfossil_pack::inspect_snapshot(dir).expect("inspect snapshot");
     let output = format!("{report}");

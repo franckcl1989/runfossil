@@ -406,12 +406,12 @@ mod tests {
         let mut probe = small_probe();
         probe.root = false;
         let plan = build_plan(probe);
-        let iomem = plan
+        let decision = plan
             .tasks()
             .iter()
             .find(|t| t.id == "proc.iomem")
-            .expect("proc.iomem should be in plan");
-        assert_eq!(iomem.decision, PlanDecision::SkippedByPolicy);
+            .map(|task| task.decision);
+        assert_eq!(decision, Some(PlanDecision::SkippedByPolicy));
     }
 
     #[test]

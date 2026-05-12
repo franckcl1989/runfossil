@@ -110,15 +110,14 @@ Canonical ownership:
 | Review gates | Design Review Checklist and Documentation Readiness Gate |
 | AI workflow | AGENTS and AI documents |
 
-## Future Implementation Workflow
+## Implementation Workflow
 
-Implementation should not begin until the user explicitly asks for it.
+Implementation work should stay within the active milestone in
+`docs/IMPLEMENTATION_PLAN.md`. It must not proceed while the Documentation
+Readiness Gate or Design Review Checklist has an unresolved blocker. If either
+gate fails, handle the documentation/design gap first.
 
-Implementation also should not begin while the Documentation Readiness Gate or
-Design Review Checklist has an unresolved blocker. If either gate fails, handle
-the documentation/design gap first.
-
-When implementation begins:
+For implementation changes:
 
 1. Start at the milestone named in `IMPLEMENTATION_PLAN.md`.
 2. Re-read `docs/DOCUMENTATION_READINESS_GATE.md` and
@@ -154,8 +153,14 @@ git diff --check
 When Markdown links change, also run a local link check or inspect all relative
 Markdown links.
 
-For future code work, use the repository's eventual Rust commands. Until those
-commands exist, do not claim build or test validation.
+For code work, run:
+
+```bash
+cargo fmt --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo check --workspace --all-targets
+cargo test --workspace
+```
 
 ## Reporting Standard
 

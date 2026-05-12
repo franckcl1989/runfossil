@@ -74,7 +74,7 @@ Rules:
 Report changed rows and validation run.
 ```
 
-## Future Implementation Task
+## Implementation Task
 
 ```text
 You are implementing runfossil code. Only proceed because the user explicitly
@@ -99,7 +99,9 @@ Rules:
 - Add focused tests or fixtures for the behavior changed.
 - Update docs if implementation reveals a contract gap.
 
-Run the repository's format, lint, build, and test commands if they exist.
+Run the repository's format, lint, build, and test commands:
+`cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`,
+`cargo check --workspace --all-targets`, and `cargo test --workspace`.
 ```
 
 ## Documentation Readiness Review

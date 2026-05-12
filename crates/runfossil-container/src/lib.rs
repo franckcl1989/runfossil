@@ -94,12 +94,12 @@ mod tests {
         }
     }
 
-    fn dir() -> tempfile::TempDir {
-        tempfile::tempdir().unwrap()
+    fn dir() -> Result<tempfile::TempDir, std::io::Error> {
+        tempfile::tempdir()
     }
 
-    fn new_store(d: &tempfile::TempDir) -> SnapshotStore {
-        SnapshotStore::create(d.path().join("snapshot"), test_metadata()).unwrap()
+    fn new_store(d: &tempfile::TempDir) -> Result<SnapshotStore, runfossil_store::StoreError> {
+        SnapshotStore::create(d.path().join("snapshot"), test_metadata())
     }
 
     #[test]
@@ -108,43 +108,50 @@ mod tests {
     }
 
     #[test]
-    fn collect_container_with_no_runtimes_records_not_found() {
-        let d = dir();
-        let mut store = new_store(&d);
+    fn collect_container_with_no_runtimes_records_not_found()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let d = dir()?;
+        let mut store = new_store(&d)?;
         let result = collect_container(&mut store);
         assert!(result.is_ok());
+        Ok(())
     }
 
     #[test]
-    fn cgroup_collector_returns_ok_when_fs_absent() {
-        let d = dir();
-        let mut store = new_store(&d);
+    fn cgroup_collector_returns_ok_when_fs_absent() -> Result<(), Box<dyn std::error::Error>> {
+        let d = dir()?;
+        let mut store = new_store(&d)?;
         let result = cgroup::collect_cgroup_evidence(&mut store);
         assert!(result.is_ok());
+        Ok(())
     }
 
     #[test]
-    fn runtime_collector_returns_ok_when_dirs_absent() {
-        let d = dir();
-        let mut store = new_store(&d);
+    fn runtime_collector_returns_ok_when_dirs_absent() -> Result<(), Box<dyn std::error::Error>> {
+        let d = dir()?;
+        let mut store = new_store(&d)?;
         let result = runtime::collect_run_state(&mut store);
         assert!(result.is_ok());
+        Ok(())
     }
 
     #[test]
-    fn namespace_evidence_with_empty_pids_returns_ok() {
-        let d = dir();
-        let mut store = new_store(&d);
+    fn namespace_evidence_with_empty_pids_returns_ok() -> Result<(), Box<dyn std::error::Error>> {
+        let d = dir()?;
+        let mut store = new_store(&d)?;
         let result = namespace::collect_namespace_evidence(&mut store, &[]);
         assert!(result.is_ok());
+        Ok(())
     }
 
     #[test]
-    fn namespace_evidence_with_nonexistent_pids_returns_ok() {
-        let d = dir();
-        let mut store = new_store(&d);
+    fn namespace_evidence_with_nonexistent_pids_returns_ok()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let d = dir()?;
+        let mut store = new_store(&d)?;
         let result = namespace::collect_namespace_evidence(&mut store, &[99999, 99998]);
         assert!(result.is_ok());
+        Ok(())
     }
 
     #[test]

@@ -5,10 +5,12 @@ use std::env;
 use std::fmt;
 use std::fs;
 use std::path::Path;
+use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use nix::sys::signal::{SigSet, SigmaskHow, Signal, pthread_sigmask};
 use runfossil_core::EffectiveUid;
 use runfossil_store::{HostMetadata, SnapshotMetadata, SnapshotStore, StoreError};
 
@@ -106,10 +108,7 @@ fn run_capture() -> Result<(), CliError> {
         .map_err(CliError::Store)?;
 
     let cancel = CancelToken::new();
-    let signal_cancel = cancel.clone();
-    let signal_dir = snapshot_dir.clone();
-
-    let signal_thread = register_signal_handler(signal_cancel, signal_dir);
+    install_signal_handler(cancel.clone(), snapshot_dir.clone());
 
     let store = Arc::new(std::sync::Mutex::new(store));
     let store_for_executor = Arc::clone(&store);
@@ -117,8 +116,6 @@ fn run_capture() -> Result<(), CliError> {
     let budget = CaptureBudget::default();
 
     let exec_result = executor::run_capture_tasks(store_for_executor, tasks, &budget, cancel);
-
-    signal_thread.join().ok();
 
     let mut store = match Arc::into_inner(store) {
         Some(mutex) => match mutex.into_inner() {
@@ -149,7 +146,9 @@ fn run_capture() -> Result<(), CliError> {
         }
         Err(ExecutorError::Cancelled) => {
             let finished_at_unix_ns = unix_time_ns()?;
-            let _ = store.finalize(&finished_at_unix_ns.to_string());
+            store
+                .close_partial(&finished_at_unix_ns.to_string())
+                .map_err(CliError::Store)?;
             eprintln!(
                 "Capture cancelled; partial snapshot preserved at {}",
                 snapshot_dir.display()
@@ -159,7 +158,9 @@ fn run_capture() -> Result<(), CliError> {
         }
         Err(ExecutorError::TaskFailed { name: _, source: _ }) => {
             let finished_at_unix_ns = unix_time_ns()?;
-            let _ = store.finalize(&finished_at_unix_ns.to_string());
+            store
+                .close_partial(&finished_at_unix_ns.to_string())
+                .map_err(CliError::Store)?;
             eprintln!(
                 "Capture completed with errors; partial snapshot at {}",
                 snapshot_dir.display()
@@ -169,7 +170,9 @@ fn run_capture() -> Result<(), CliError> {
         }
         Err(ExecutorError::GlobalTimeout) => {
             let finished_at_unix_ns = unix_time_ns()?;
-            let _ = store.finalize(&finished_at_unix_ns.to_string());
+            store
+                .close_partial(&finished_at_unix_ns.to_string())
+                .map_err(CliError::Store)?;
             Err(CliError::CaptureTimeout)
         }
     }
@@ -365,32 +368,52 @@ impl std::error::Error for CliError {
     }
 }
 
-/// Register a signal handler that cancels the capture on SIGINT/SIGTERM.
-/// Returns a thread handle that must be joined before process exit.
-fn register_signal_handler(
-    cancel: CancelToken,
-    snapshot_dir: std::path::PathBuf,
-) -> std::thread::JoinHandle<()> {
-    runfossil_signal::install_handlers();
+fn install_signal_handler(cancel: CancelToken, snapshot_dir: PathBuf) {
+    let signals = capture_signal_set();
+    let mut previous_mask = SigSet::empty();
+    if let Err(source) = pthread_sigmask(
+        SigmaskHow::SIG_BLOCK,
+        Some(&signals),
+        Some(&mut previous_mask),
+    ) {
+        eprintln!("warning: could not install signal cancellation handler: {source}");
+        return;
+    }
 
-    match std::thread::Builder::new()
+    if let Err(source) = std::thread::Builder::new()
         .name("runfossil-signal".into())
         .spawn(move || {
+            let mut reported = false;
             loop {
-                std::thread::sleep(std::time::Duration::from_millis(100));
-                if runfossil_signal::was_signalled() {
-                    cancel.cancel();
-                    eprintln!(
-                        "Signal received; cancelling capture. Partial snapshot at {}",
-                        snapshot_dir.display()
-                    );
-                    break;
+                match signals.wait() {
+                    Ok(signal) => {
+                        cancel.cancel();
+                        if !reported {
+                            reported = true;
+                            eprintln!(
+                                "{signal:?} received; cancelling capture. Partial snapshot at {}",
+                                snapshot_dir.display()
+                            );
+                        }
+                    }
+                    Err(source) => {
+                        eprintln!("warning: signal wait failed: {source}");
+                        break;
+                    }
                 }
             }
-        }) {
-        Ok(handle) => handle,
-        Err(_) => std::thread::spawn(|| {}),
+        })
+    {
+        let _ = pthread_sigmask(SigmaskHow::SIG_SETMASK, Some(&previous_mask), None);
+        eprintln!("warning: could not start signal cancellation thread: {source}");
     }
+}
+
+fn capture_signal_set() -> SigSet {
+    let mut signals = SigSet::empty();
+    signals.add(Signal::SIGINT);
+    signals.add(Signal::SIGTERM);
+    signals
 }
 
 fn capture_task_list() -> Vec<CaptureTask> {

@@ -238,6 +238,7 @@ fn count_files_recursive(dir: &Path) -> io::Result<usize> {
 }
 
 #[cfg(test)]
+#[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
     use super::*;
     use std::time::{SystemTime, UNIX_EPOCH};

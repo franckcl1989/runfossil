@@ -403,14 +403,14 @@ mod tests {
     }
 
     #[test]
-    fn parse_loadavg_maps_to_expected_tuples() {
+    fn parse_loadavg_maps_to_expected_tuples() -> Result<(), &'static str> {
         let result = parse_loadavg("1.23 2.34 3.45 7/890 12345");
-        assert!(result.is_some());
-        let (one, five, fifteen, running) = result.unwrap();
+        let (one, five, fifteen, running) = result.ok_or("loadavg should parse")?;
         assert!((one - 1.23).abs() < f64::EPSILON);
         assert!((five - 2.34).abs() < f64::EPSILON);
         assert!((fifteen - 3.45).abs() < f64::EPSILON);
         assert_eq!(running, 7);
+        Ok(())
     }
 
     #[test]

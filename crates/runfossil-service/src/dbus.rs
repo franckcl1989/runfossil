@@ -413,7 +413,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn build_method_call_starts_with_little_endian() {
+    fn build_method_call_starts_with_little_endian() -> std::io::Result<()> {
         let msg = build_method_call(
             1u32,
             "org.freedesktop.systemd1",
@@ -421,13 +421,13 @@ mod tests {
             "org.freedesktop.systemd1.Manager",
             "ListUnits",
             &[],
-        )
-        .expect("build method call");
+        )?;
         assert_eq!(msg[0], b'l');
+        Ok(())
     }
 
     #[test]
-    fn build_method_call_message_type_is_method_call() {
+    fn build_method_call_message_type_is_method_call() -> std::io::Result<()> {
         let msg = build_method_call(
             1u32,
             "org.freedesktop.systemd1",
@@ -435,45 +435,45 @@ mod tests {
             "org.freedesktop.systemd1.Manager",
             "ListUnits",
             &[],
-        )
-        .expect("build method call");
+        )?;
         assert_eq!(msg[1], MSG_TYPE_METHOD_CALL);
+        Ok(())
     }
 
     #[test]
-    fn build_method_call_includes_serial() {
-        let msg = build_method_call(42u32, "dest", "/path", "iface", "member", &[])
-            .expect("build method call");
+    fn build_method_call_includes_serial() -> std::io::Result<()> {
+        let msg = build_method_call(42u32, "dest", "/path", "iface", "member", &[])?;
         let serial = u32::from_ne_bytes([msg[8], msg[9], msg[10], msg[11]]);
         assert_eq!(serial, 42);
+        Ok(())
     }
 
     #[test]
-    fn build_method_call_header_fields_contain_path() {
-        let msg = build_method_call(1u32, "dest", "/org/test", "iface", "member", &[])
-            .expect("build method call");
+    fn build_method_call_header_fields_contain_path() -> std::io::Result<()> {
+        let msg = build_method_call(1u32, "dest", "/org/test", "iface", "member", &[])?;
         let body = String::from_utf8_lossy(&msg);
         assert!(body.contains("/org/test"));
+        Ok(())
     }
 
     #[test]
-    fn build_method_call_header_fields_contain_member() {
-        let msg = build_method_call(1u32, "dest", "/path", "iface", "ListUnits", &[])
-            .expect("build method call");
+    fn build_method_call_header_fields_contain_member() -> std::io::Result<()> {
+        let msg = build_method_call(1u32, "dest", "/path", "iface", "ListUnits", &[])?;
         let body = String::from_utf8_lossy(&msg);
         assert!(body.contains("ListUnits"));
+        Ok(())
     }
 
     #[test]
-    fn build_method_call_with_string_args_includes_args_in_body() {
-        let msg = build_method_call(1u32, "dest", "/path", "iface", "member", &["arg1"])
-            .expect("build method call");
+    fn build_method_call_with_string_args_includes_args_in_body() -> std::io::Result<()> {
+        let msg = build_method_call(1u32, "dest", "/path", "iface", "member", &["arg1"])?;
         let body = String::from_utf8_lossy(&msg);
         assert!(body.contains("arg1"));
+        Ok(())
     }
 
     #[test]
-    fn build_method_call_body_length_is_correct() {
+    fn build_method_call_body_length_is_correct() -> std::io::Result<()> {
         let msg = build_method_call(
             1u32,
             "org.freedesktop.systemd1",
@@ -481,14 +481,14 @@ mod tests {
             "org.freedesktop.systemd1.Manager",
             "ListUnits",
             &[],
-        )
-        .expect("build method call");
+        )?;
         let body_len = u32::from_ne_bytes([msg[4], msg[5], msg[6], msg[7]]);
         assert_eq!(body_len, 0);
+        Ok(())
     }
 
     #[test]
-    fn build_method_call_with_args_has_nonzero_body_length() {
+    fn build_method_call_with_args_has_nonzero_body_length() -> std::io::Result<()> {
         let msg = build_method_call(
             1u32,
             "dest",
@@ -496,18 +496,18 @@ mod tests {
             "iface",
             "member",
             &["unit1", "unit2"],
-        )
-        .expect("build method call");
+        )?;
         let body_len = u32::from_ne_bytes([msg[4], msg[5], msg[6], msg[7]]);
         assert!(body_len > 0);
+        Ok(())
     }
 
     #[test]
-    fn build_method_call_field_array_length_is_set() {
-        let msg = build_method_call(1u32, "dest", "/path", "iface", "member", &[])
-            .expect("build method call");
+    fn build_method_call_field_array_length_is_set() -> std::io::Result<()> {
+        let msg = build_method_call(1u32, "dest", "/path", "iface", "member", &[])?;
         let fields_len = u32::from_ne_bytes([msg[12], msg[13], msg[14], msg[15]]);
         assert!(fields_len > 0);
+        Ok(())
     }
 
     #[test]

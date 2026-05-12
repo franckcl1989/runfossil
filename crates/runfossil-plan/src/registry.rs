@@ -1449,16 +1449,22 @@ mod tests {
     }
 
     #[test]
-    fn registry_has_all_seven_source_families() {
+    fn registry_has_implemented_source_families() {
         let units = coverage_registry();
         let sources: Vec<SourceSlug> = units.iter().map(|u| u.source).collect();
         let expected = [
             SourceSlug::Proc,
             SourceSlug::Sys,
+            SourceSlug::Run,
             SourceSlug::Dev,
             SourceSlug::Kernel,
             SourceSlug::Netlink,
             SourceSlug::Service,
+            SourceSlug::Sessions,
+            SourceSlug::Security,
+            SourceSlug::Scheduler,
+            SourceSlug::Crash,
+            SourceSlug::Hardware,
             SourceSlug::Container,
         ];
         for source in &expected {
@@ -1520,13 +1526,9 @@ mod tests {
         for unit in &units {
             decisions.push(unit.coverage_decision);
         }
-        assert!(decisions.iter().any(|d| *d == CoverageDecision::Collect));
-        assert!(
-            decisions
-                .iter()
-                .any(|d| *d == CoverageDecision::Conditional)
-        );
-        assert!(decisions.iter().any(|d| *d == CoverageDecision::Limited));
+        assert!(decisions.contains(&CoverageDecision::Collect));
+        assert!(decisions.contains(&CoverageDecision::Conditional));
+        assert!(decisions.contains(&CoverageDecision::Limited));
     }
 
     #[test]

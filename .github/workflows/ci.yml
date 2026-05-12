@@ -66,7 +66,7 @@ jobs:
           restore-keys: ${{ runner.os }}-stable-cargo-
 
       - name: cargo test
-        run: cargo test --workspace --all-targets
+        run: cargo test --workspace
 
   lint:
     name: Lint
@@ -93,11 +93,8 @@ jobs:
       - name: cargo fmt
         run: cargo fmt --check
 
-      - name: cargo clippy (lib/bin)
-        run: cargo clippy --workspace -- -D warnings
-
-      - name: cargo clippy (tests)
-        run: cargo clippy --workspace --tests -- -D warnings || true
+      - name: cargo clippy (all targets)
+        run: cargo clippy --workspace --all-targets -- -D warnings
 
   audit:
     name: Security Audit
@@ -109,3 +106,38 @@ jobs:
         uses: EmbarkStudios/cargo-deny-action@v2
         with:
           command: check bans licenses sources
+
+  release-static:
+    name: Static Release Artifact
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+          targets: x86_64-unknown-linux-musl
+
+      - name: Install musl toolchain
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+
+      - name: Build static release binary
+        env:
+          CC_x86_64_unknown_linux_musl: musl-gcc
+          CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER: musl-gcc
+        run: cargo build --release --target x86_64-unknown-linux-musl -p runfossil-cli
+
+      - name: Verify static release binary
+        run: bash scripts/verify-static-binary.sh target/x86_64-unknown-linux-musl/release/runfossil
+
+      - name: Write checksum
+        run: sha256sum target/x86_64-unknown-linux-musl/release/runfossil > target/x86_64-unknown-linux-musl/release/runfossil.sha256
+
+      - name: Upload static release artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: runfossil-x86_64-unknown-linux-musl
+          path: |
+            target/x86_64-unknown-linux-musl/release/runfossil
+            target/x86_64-unknown-linux-musl/release/runfossil.sha256

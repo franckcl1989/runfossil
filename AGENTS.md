@@ -6,9 +6,10 @@ duplicating policy.
 
 ## Project State
 
-The repository has entered Milestone 1 implementation. It contains a Rust 1.95
-workspace skeleton plus the documentation design baseline. Keep implementation
-work scoped to the current user request and the milestone boundaries in
+The repository is in Milestone 9 hardening and release-readiness work. It
+contains a Rust 1.95 workspace with baseline implementations for Milestones 1
+through 8 plus the documentation design baseline. Keep implementation work
+scoped to the current user request and the milestone boundaries in
 `docs/IMPLEMENTATION_PLAN.md`.
 
 Milestone 0 passed `docs/DOCUMENTATION_READINESS_GATE.md` and
@@ -78,9 +79,9 @@ For documentation-only changes:
 For code changes:
 
 - Run the repository's formatting, lint, build, and test commands:
-  `cargo fmt --check`, `cargo clippy --workspace -- -D warnings`,
-  `cargo check`, `cargo test`.
-- Verify no project-owned unsafe code is introduced.
+  `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`,
+  `cargo check --workspace --all-targets`, `cargo test --workspace`.
+- Verify no project-owned unsafe code exists.
 - Verify collectors do not execute external commands.
 - Verify vocabulary spellings in `runfossil-core` match the snapshot contract.
 

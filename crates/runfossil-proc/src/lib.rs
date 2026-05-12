@@ -1371,12 +1371,12 @@ mod tests {
         }
     }
 
-    fn dir() -> tempfile::TempDir {
-        tempfile::tempdir().unwrap()
+    fn dir() -> Result<tempfile::TempDir, std::io::Error> {
+        tempfile::tempdir()
     }
 
-    fn new_store(d: &tempfile::TempDir) -> SnapshotStore {
-        SnapshotStore::create(d.path().join("snapshot"), test_metadata()).unwrap()
+    fn new_store(d: &tempfile::TempDir) -> Result<SnapshotStore, runfossil_store::StoreError> {
+        SnapshotStore::create(d.path().join("snapshot"), test_metadata())
     }
 
     #[test]
@@ -1454,31 +1454,26 @@ mod tests {
     fn fs_error_io_maps_correctly() {
         let e = FsError::Io {
             path: Path::new("/broken").to_path_buf(),
-            source: io::Error::new(io::ErrorKind::Other, "broken"),
+            source: io::Error::other("broken"),
         };
         assert_eq!(fs_error_to_manifest_status(&e), ManifestStatus::IoError);
     }
 
     #[test]
     fn all_fs_error_to_status_mappings_are_distinct() {
-        let mut seen = Vec::new();
-        seen.push(fs_error_to_manifest_status(&FsError::NotFound(
-            Path::new("a").to_path_buf(),
-        )));
-        seen.push(fs_error_to_manifest_status(&FsError::PermissionDenied(
-            Path::new("b").to_path_buf(),
-        )));
-        seen.push(fs_error_to_manifest_status(&FsError::Timeout(
-            Path::new("c").to_path_buf(),
-        )));
-        seen.push(fs_error_to_manifest_status(&FsError::SizeLimited {
-            path: Path::new("d").to_path_buf(),
-            max_bytes: 1,
-        }));
-        seen.push(fs_error_to_manifest_status(&FsError::Io {
-            path: Path::new("e").to_path_buf(),
-            source: io::Error::new(io::ErrorKind::Other, ""),
-        }));
+        let seen = [
+            fs_error_to_manifest_status(&FsError::NotFound(Path::new("a").to_path_buf())),
+            fs_error_to_manifest_status(&FsError::PermissionDenied(Path::new("b").to_path_buf())),
+            fs_error_to_manifest_status(&FsError::Timeout(Path::new("c").to_path_buf())),
+            fs_error_to_manifest_status(&FsError::SizeLimited {
+                path: Path::new("d").to_path_buf(),
+                max_bytes: 1,
+            }),
+            fs_error_to_manifest_status(&FsError::Io {
+                path: Path::new("e").to_path_buf(),
+                source: io::Error::other(""),
+            }),
+        ];
         let unique: Vec<_> = seen.iter().collect();
         assert_eq!(
             unique.len(),
@@ -1523,9 +1518,9 @@ mod tests {
     }
 
     #[test]
-    fn sys_collector_returns_ok_when_sysfs_absent() {
-        let d = dir();
-        let mut store = new_store(&d);
+    fn sys_collector_returns_ok_when_sysfs_absent() -> Result<(), Box<dyn std::error::Error>> {
+        let d = dir()?;
+        let mut store = new_store(&d)?;
         let result = collect_sys(&mut store);
         if let Err(e) = result.as_ref() {
             assert!(
@@ -1533,37 +1528,41 @@ mod tests {
                 "unexpected error: {e}"
             );
         }
+        Ok(())
     }
 
     #[test]
-    fn dev_collector_returns_ok_when_dev_absent() {
-        let d = dir();
-        let mut store = new_store(&d);
+    fn dev_collector_returns_ok_when_dev_absent() -> Result<(), Box<dyn std::error::Error>> {
+        let d = dir()?;
+        let mut store = new_store(&d)?;
         let result = collect_dev(&mut store);
         if let Err(e) = result.as_ref() {
             assert!(e.to_string().contains("Io"), "unexpected error: {e}");
         }
+        Ok(())
     }
 
     #[test]
-    fn run_collector_returns_ok_when_dirs_absent() {
-        let d = dir();
-        let mut store = new_store(&d);
+    fn run_collector_returns_ok_when_dirs_absent() -> Result<(), Box<dyn std::error::Error>> {
+        let d = dir()?;
+        let mut store = new_store(&d)?;
         let result = collect_run(&mut store);
         assert!(
             result.is_ok(),
             "run collector should return Ok even when /run dirs are absent"
         );
+        Ok(())
     }
 
     #[test]
-    fn now_ns_is_a_timestamp_string() {
+    fn now_ns_is_a_timestamp_string() -> Result<(), Box<dyn std::error::Error>> {
         let ns = now_ns();
-        let parsed: u64 = ns.parse().unwrap();
+        let parsed: u64 = ns.parse()?;
         assert!(
             parsed > 1_700_000_000_000_000_000,
             "timestamp should be in 2023+ range"
         );
+        Ok(())
     }
 
     #[test]
@@ -1593,35 +1592,38 @@ mod tests {
     }
 
     #[test]
-    fn security_collector_returns_ok_when_dirs_absent() {
-        let d = dir();
-        let mut store = new_store(&d);
+    fn security_collector_returns_ok_when_dirs_absent() -> Result<(), Box<dyn std::error::Error>> {
+        let d = dir()?;
+        let mut store = new_store(&d)?;
         let result = collect_security(&mut store);
         assert!(
             result.is_ok(),
             "security collector should return Ok even when source dirs are absent"
         );
+        Ok(())
     }
 
     #[test]
-    fn scheduler_collector_returns_ok_when_dirs_absent() {
-        let d = dir();
-        let mut store = new_store(&d);
+    fn scheduler_collector_returns_ok_when_dirs_absent() -> Result<(), Box<dyn std::error::Error>> {
+        let d = dir()?;
+        let mut store = new_store(&d)?;
         let result = collect_scheduler(&mut store);
         assert!(
             result.is_ok(),
             "scheduler collector should return Ok even when source dirs are absent"
         );
+        Ok(())
     }
 
     #[test]
-    fn crash_collector_returns_ok_when_dirs_absent() {
-        let d = dir();
-        let mut store = new_store(&d);
+    fn crash_collector_returns_ok_when_dirs_absent() -> Result<(), Box<dyn std::error::Error>> {
+        let d = dir()?;
+        let mut store = new_store(&d)?;
         let result = collect_crash(&mut store);
         assert!(
             result.is_ok(),
             "crash collector should return Ok even when source dirs are absent"
         );
+        Ok(())
     }
 }

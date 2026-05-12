@@ -1,7 +1,7 @@
 # Copilot Instructions
 
-`runfossil` is a pure Rust Linux runtime snapshot tool in Milestone 1 workspace
-skeleton implementation.
+`runfossil` is a pure Rust Linux runtime snapshot tool in Milestone 9 hardening
+and release-readiness work.
 
 Follow the repository policy in `AGENTS.md`. In particular:
 
