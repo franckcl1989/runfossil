@@ -32,13 +32,13 @@ x86_64-unknown-linux-musl
 Build and verify it locally with:
 
 ```text
-rustup target add x86_64-unknown-linux-musl
 bash scripts/build-static-release.sh
 ```
 
-The script requires a musl linker such as `musl-gcc`, verifies that `file(1)`
-reports a statically linked or static PIE binary, verifies that `ldd` does not
-report dynamic dependencies, and writes `runfossil.sha256` next to the binary.
+The script installs the Rust target when it is missing, requires a musl linker
+such as `musl-gcc`, verifies that `file(1)` reports a statically linked or
+static PIE binary, verifies that `ldd` does not report dynamic dependencies, and
+writes `runfossil.sha256` next to the binary.
 
 CI has a `release-static` job that installs `musl-tools`, builds the musl
 release binary, verifies static linkage, writes a checksum, and uploads the

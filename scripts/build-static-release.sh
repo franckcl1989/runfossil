@@ -5,9 +5,7 @@ target="x86_64-unknown-linux-musl"
 binary="target/${target}/release/runfossil"
 
 if ! rustup target list --installed | grep -qx "$target"; then
-    echo "missing Rust target: $target" >&2
-    echo "run: rustup target add $target" >&2
-    exit 69
+    rustup target add "$target"
 fi
 
 if command -v musl-gcc >/dev/null 2>&1; then
