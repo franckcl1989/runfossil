@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 #![doc = "Post-capture snapshot packaging: builds a .tar.zst archive from a snapshot directory."]
 
 use std::collections::BTreeMap;

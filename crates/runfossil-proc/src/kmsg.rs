@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 #![doc = "Kernel ring buffer bounded window collector. Reads /dev/kmsg with byte and time bounds."]
 
 use std::fs;

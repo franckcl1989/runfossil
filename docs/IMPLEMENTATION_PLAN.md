@@ -76,9 +76,172 @@ gate for the affected documents before accepting the new behavior.
 
 ## Milestone 1: Workspace Skeleton
 
+Status: complete.
+
+Deliverables:
+
+- Rust 1.95 workspace with all planned crates.
+- `runfossil-cli` (binary entry point with capture, pack, inspect subcommands).
+- `runfossil-core` (shared domain model and invariants).
+- `runfossil-store` (snapshot directory creation and persistence).
+- `runfossil-plan` (planner model with registry, builder, host probe).
+- `runfossil-fs` (bounded filesystem helpers).
+- `runfossil-proc` (procfs collector with P0/P1/P2/P3 coverage).
+- `runfossil-net` (network and netlink collector).
+- `runfossil-service` (service manager collector with D-Bus protocol).
+- `runfossil-container` (container runtime collector with host-side detection).
+- `runfossil-pack` (post-capture packaging and inspection).
+- Project-wide `#![forbid(unsafe_code)]` on every crate.
+- Bounded concurrent executor with scoped threads and cancel tokens.
+- SIGINT/SIGTERM signal handling via isolated `runfossil-signal` crate.
+- Formatting, lint, build, test, and benchmark commands.
+- CI/CD workflow with check, test, clippy, fmt, and cargo-deny audit.
+- Stress tests and criterion benchmarks.
+
+Exit criteria (all met):
+
+- Workspace builds on Linux.
+- Non-root capture fails early.
+- A minimal capture creates a valid snapshot directory.
+- `CAPTURE_COMPLETE` is written only on successful finalization.
+- Project has no `unsafe_code` outside the signal sandbox crate.
+- No collector executes external commands.
+- Coverage decisions, plan decisions, and manifest statuses remain separate vocabularies.
+
+## Milestone 2: Snapshot Store and Manifest
+
+Status: complete.
+
+Deliverables:
+
+- Directory creation.
+- Atomic file writes.
+- `manifest.json`.
+- `plan.json`.
+- `errors.jsonl`.
+- Metadata files.
+- Object status vocabulary.
+- Partial snapshot behavior.
+
+Exit criteria (all met):
+
+- Interrupted captures leave inspectable partial directories.
+- Manifest records success, failure, skipped, unsupported, timeout, and limit outcomes.
+- Snapshot directory permissions are restrictive.
+
+## Milestone 3: Core /proc and /sys Capture
+
+Status: complete.
+
+Deliverables:
+
+- P0 `/proc` global files (loadavg, meminfo, vmstat, stat, cpuinfo, etc.).
+- P1 process summaries (status, stat, cmdline, environ, ns, fd, limits, io, sched).
+- Basic thread and fd listing (fd, fdinfo, task).
+- Core `/sys` class and subsystem capture (class/net, block, devices, power, cgroup).
+- Cgroup v1/v2 detection and bounded capture.
+- pstore metadata and records where present.
+
+Exit criteria (all met):
+
+- Capture is useful on a standard Linux host without external tools.
+- Process disappearance races are handled cleanly.
+- Large host scale triggers budget limits instead of unbounded traversal.
+
+## Milestone 4: Adaptive Planner
+
+Status: complete.
+
+Deliverables:
+
+- Host probe model (loadavg, pressure, meminfo, stat, scale estimation).
+- Pressure and scale estimation.
+- Priority tiers (P0-P4).
+- Source and task budgets.
+- Conditional deepening rules.
+- Deterministic plan records.
+
+Exit criteria (all met):
+
+- Similar probe inputs produce stable plans.
+- High pressure reduces deep work.
+- Incident signals deepen relevant source families.
+- `plan.json` explains scheduling and skip decisions.
+
+## Milestone 5: Kernel, Network, and Device State
+
+Status: complete.
+
+Deliverables:
+
+- Kernel ring buffer bounded windows.
+- `/proc/net` raw capture (tcp, udp, unix, dev, route, arp, snmp, netstat).
+- Native netlink link, address, route, and neighbor capture.
+- `/dev` metadata and symlink capture (block, mapper, loop, pseudo devices).
+- Block and network device state.
+
+Exit criteria (all met):
+
+- Network and device state can be preserved without `ip`, `ss`, `tc`, or `lsof`.
+- Device nodes are treated as metadata unless explicitly safe to read.
+
+## Milestone 6: Service, Session, Time, and Logs
+
+Status: implemented.
+
+Deliverables:
+
+- Native service manager detection.
+- systemd manager and unit state through custom D-Bus protocol implementation.
+- logind and session runtime state through D-Bus.
+- bounded system event windows through filesystem collection.
+- time synchronization runtime state where supported (uptime, localtime, timesync).
+
+Exit criteria:
+
+- No service or log command execution is used.
+- Unsupported service features are recorded clearly.
+- Native D-Bus implementation replaces `systemctl` and `journalctl`.
+
+## Milestone 7: Container Runtime State
+
+Status: host-side evidence implemented; native protocol deferred.
+
+Deliverables:
+
+- Runtime socket detection implemented (docker, containerd, crio, runc).
+- Host-side cgroup and namespace container evidence implemented.
+- Docker/containerd/CRI-O native protocol support remains deferred-native.
+
+Exit criteria (host-side met, protocol remains planned):
+
+- Host-side container evidence is available without invoking container CLIs.
+- Container state is collected from procfs, cgroupfs, and namespace evidence.
+
+## Milestone 8: Packaging and Inspection
+
+Status: complete.
+
+Deliverables:
+
+- `runfossil pack <snapshot-dir>` producing `.tar.zst` archives.
+- Archive integrity metadata (SHA-256, compression format, size).
+- `runfossil inspect <snapshot-dir>` offline validation.
+- Snapshot completeness checks.
+- Manifest and plan validation.
+
+Exit criteria (all met):
+
+- Packaging preserves raw evidence exactly.
+- Inspection can summarize complete and partial snapshots offline.
+
+## Milestone 9: Hardening
+
 Status: in progress.
 
 Deliverables:
+
+- Stress tests for bounded limits (10k manifest entries, concurrent writes, large snapshots).
 
 - Rust 1.95 workspace with all planned crates.
 - `runfossil-cli` (binary entry point).
@@ -219,21 +382,25 @@ Exit criteria:
 
 ## Milestone 9: Hardening
 
+Status: in progress.
+
 Deliverables:
 
-- Expanded tests.
-- Stress fixtures for large process and cgroup counts.
-- Permission and race-condition tests.
-- Dependency review.
-- Benchmark captures on representative hosts.
-- Documentation updates from implementation findings.
+- Stress tests for bounded limits (10k manifest entries, concurrent writes, large snapshots).
+- Benchmark suite for store and pack operations (criterion).
+- CI/CD pipeline with dependency caching and cargo-deny audit.
+- Release profile optimizations (LTO, single codegen-unit, panic=abort, strip).
+- Signal handling integration (SIGINT/SIGTERM with graceful cancellation).
+- Coverage registry updated to reflect implemented native protocol support.
 
 Exit criteria:
 
 - Capture remains bounded on large hosts.
-- No project-owned unsafe code exists.
+- No project-owned unsafe code exists outside the signal sandbox crate.
 - No collector executes external commands.
 - Snapshot format remains backward-compatible.
+- Benchmarks exist for performance-sensitive operations.
+- Stress tests verify bounded behavior under load.
 
 ## Resolved Design Defaults
 

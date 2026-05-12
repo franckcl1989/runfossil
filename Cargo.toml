@@ -9,6 +9,7 @@ members = [
     "crates/runfossil-plan",
     "crates/runfossil-proc",
     "crates/runfossil-service",
+    "crates/runfossil-signal",
     "crates/runfossil-store",
 ]
 resolver = "3"
@@ -40,3 +41,24 @@ expect_used = "deny"
 todo = "deny"
 unimplemented = "deny"
 unwrap_used = "deny"
+
+# Release profile: optimize for size and performance.
+# LTO, single codegen unit, and abort-on-panic yield the smallest binary.
+# opt-level=3 for maximum runtime performance; codegen-units=1 and
+# panic=abort strip unwinding tables.
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = "symbols"
+
+# The dev profile inherits from the default settings.
+[profile.dev]
+opt-level = 0
+
+# Benchmark profile: similar to release for meaningful perf numbers.
+[profile.bench]
+opt-level = 3
+lto = false
+debug = false

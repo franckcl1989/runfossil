@@ -1,3 +1,6 @@
+#![forbid(unsafe_code)]
+#![doc = "Builds a capture plan from host probe results, applying pressure, scale, and source-availability policies."]
+
 use runfossil_core::{CoverageDecision, PlanDecision, Priority, SourceSlug};
 
 use crate::probe::HostProbe;

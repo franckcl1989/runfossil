@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 #![doc = "Time synchronization and clock state collector."]
 
 use std::path::Path;

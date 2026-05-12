@@ -1,0 +1,74 @@
+[advisories]
+vulnerability = "deny"
+unmaintained = "warn"
+unsound = "deny"
+yanked = "deny"
+
+[licenses]
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-3.0",
+    "Zlib",
+]
+# cargo-deny default deny list
+deny = []
+copyleft = "deny"
+default = "deny"
+
+[[licenses.exceptions]]
+name = "runfossil-cli"
+allow = ["MIT"]
+
+[[licenses.exceptions]]
+name = "runfossil-core"
+allow = ["MIT"]
+
+[[licenses.exceptions]]
+name = "runfossil-container"
+allow = ["MIT"]
+
+[[licenses.exceptions]]
+name = "runfossil-fs"
+allow = ["MIT"]
+
+[[licenses.exceptions]]
+name = "runfossil-net"
+allow = ["MIT"]
+
+[[licenses.exceptions]]
+name = "runfossil-pack"
+allow = ["MIT"]
+
+[[licenses.exceptions]]
+name = "runfossil-plan"
+allow = ["MIT"]
+
+[[licenses.exceptions]]
+name = "runfossil-proc"
+allow = ["MIT"]
+
+[[licenses.exceptions]]
+name = "runfossil-service"
+allow = ["MIT"]
+
+[[licenses.exceptions]]
+name = "runfossil-signal"
+allow = ["MIT"]
+
+[[licenses.exceptions]]
+name = "runfossil-store"
+allow = ["MIT"]
+
+[bans]
+multiple-versions = "deny"
+wildcards = "deny"
+highlight = "all"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

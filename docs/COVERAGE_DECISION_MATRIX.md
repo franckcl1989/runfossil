@@ -249,13 +249,13 @@ manifest statuses is maintained in the
 ## Service Manager
 
 | Domain | Coverage unit | Decision | Priority | Mode | Rationale |
-|---|---|---:|---:|---|---|
-| Manager state | manager, system, degraded, failed count, job queue | deferred-native | P3 | native-protocol | systemd/native protocol support required; no `systemctl`. |
-| Unit state | unit list, active/sub/load/result/dependency state | deferred-native | P3 | native-protocol | Native service manager collector required. |
-| Service state | main process, exit status, restart, watchdog, cgroup, resource usage | deferred-native | P3 | native-protocol | Native service manager collector required. |
-| Socket unit state | socket unit, listening socket, accepted connection counters | deferred-native | P3 | native-protocol | Native service manager collector required. |
-| Timer unit state | timer state, last/next trigger, associated unit | deferred-native | P3 | native-protocol | Native service manager collector required. |
-| Failed / degraded state | failed units, degraded state, failed jobs | deferred-native | P3 | native-protocol | Native service manager collector required. |
+|---|--:|--:|--:|---|---|
+| Manager state | manager, system, degraded, failed count, job queue | collect | P3 | native-protocol | Native D-Bus protocol support via custom D-Bus implementation. |
+| Unit state | unit list, active/sub/load/result/dependency state | collect | P3 | native-protocol | Native D-Bus ListUnits call. |
+| Service state | main process, exit status, restart, watchdog, cgroup, resource usage | collect | P3 | native-protocol | Native D-Bus unit property enumeration. |
+| Socket unit state | socket unit, listening socket, accepted connection counters | collect | P3 | native-protocol | Native D-Bus unit property enumeration. |
+| Timer unit state | timer state, last/next trigger, associated unit | collect | P3 | native-protocol | Native D-Bus unit property enumeration. |
+| Failed / degraded state | failed units, degraded state, failed jobs | collect | P3 | native-protocol | Native D-Bus ListUnitsFiltered call. |
 
 ## Netlink
 
@@ -287,7 +287,7 @@ manifest statuses is maintained in the
 | Login session | logged-in user, login time, TTY, remote host | conditional | P3 | native-protocol | Capture through native session database support. |
 | SSH session | SSH session, remote address, TTY relation | conditional | P3 | raw-file-set | Capture from process/session evidence and native records where available. |
 | TTY / PTY | active TTY, active PTY, owner relation | conditional | P3 | metadata | Capture metadata only; do not read streams. |
-| logind | sessions, user state, seat state, linger state | deferred-native | P3 | native-protocol | Native D-Bus/logind support required. |
+| logind | sessions, user state, seat state, linger state | collect | P3 | native-protocol | Native D-Bus logind protocol via custom D-Bus implementation. |
 | Interactive process relation | foreground process group, shell relation, interactive process | conditional | P3 | raw-file-set | Derived from procfs/session metadata when available. |
 
 ## Scheduler / Job Runtime

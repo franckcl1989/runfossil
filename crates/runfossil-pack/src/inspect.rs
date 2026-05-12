@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 #![doc = "Snapshot inspection: offline validation and summary of partial or complete snapshots."]
 
 use std::collections::BTreeMap;

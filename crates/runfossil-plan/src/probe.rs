@@ -1,3 +1,6 @@
+#![forbid(unsafe_code)]
+#![doc = "Host probing for capture planning: reads /proc files, detects cgroup version, systemd, container sockets, and filesystem availability."]
+
 use std::path::Path;
 
 use runfossil_fs::{

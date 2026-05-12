@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 #![doc = "Sysfs collector: /sys/fs/cgroup detection, pstore capture, class device capture."]
 
 use std::path::Path;

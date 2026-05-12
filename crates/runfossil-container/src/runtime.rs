@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 #![doc = "Container runtime detection and /run state collection."]
 
 use std::path::Path;

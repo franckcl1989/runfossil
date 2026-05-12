@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 #![doc = "logind session state collector via D-Bus native protocol."]
 
 use std::os::unix::net::UnixStream;

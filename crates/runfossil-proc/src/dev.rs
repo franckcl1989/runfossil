@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 #![doc = "/dev metadata and symlink-targets collector. Device nodes are metadata-only except for /dev/kmsg."]
 
 use std::fs;

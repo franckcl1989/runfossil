@@ -19,6 +19,12 @@ runfossil-plan = { path = "../runfossil-plan" }
 runfossil-proc = { path = "../runfossil-proc" }
 runfossil-service = { path = "../runfossil-service" }
 runfossil-store = { path = "../runfossil-store" }
+runfossil-signal = { path = "../runfossil-signal" }
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+tempfile = "3"
+tar = "0.4"
+zstd = { version = "0.13", default-features = false }

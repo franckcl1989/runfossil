@@ -78,7 +78,8 @@ pub enum StoreError {
 }
 
 impl StoreError {
-    pub(crate) fn io(context: &'static str, source: io::Error) -> Self {
+    /// Create a store error from an I/O context and source error.
+    pub fn io(context: &'static str, source: io::Error) -> Self {
         Self::Io { context, source }
     }
 }

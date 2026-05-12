@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 #![doc = "Container cgroup evidence collection."]
 
 use std::path::Path;

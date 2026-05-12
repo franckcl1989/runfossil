@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 #![doc = "Manifest entry types and serialization for runfossil snapshot metadata."]
 
 use runfossil_core::{ManifestStatus, ObjectKind, SourceSlug};

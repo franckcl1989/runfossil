@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 #![doc = "Snapshot store session: directory management, manifest tracking, error logging, and partial snapshot behavior."]
 
 use std::path::{Path, PathBuf};

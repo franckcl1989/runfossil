@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 #![doc = "Bounded system log and journal window collector."]
 
 use std::path::Path;

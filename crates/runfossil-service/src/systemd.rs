@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 #![doc = "systemd D-Bus collector: manager state and unit list via native protocol."]
 
 use std::os::unix::net::UnixStream;

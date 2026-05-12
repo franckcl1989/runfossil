@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 #![doc = "Container namespace evidence via /proc/<pid>/ns symlinks."]
 
 use std::path::Path;

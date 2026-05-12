@@ -6,10 +6,15 @@ use std::fmt;
 use std::fs;
 use std::path::Path;
 use std::process::ExitCode;
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use runfossil_core::EffectiveUid;
 use runfossil_store::{HostMetadata, SnapshotMetadata, SnapshotStore, StoreError};
+
+mod executor;
+
+use executor::{CancelToken, CaptureBudget, CaptureTask, ExecutorError};
 
 const HELP: &str = "\
 runfossil
@@ -83,7 +88,7 @@ fn run_capture() -> Result<(), CliError> {
     let snapshot_name = snapshot_name(started_at_unix_ns, &host);
     let snapshot_dir = env::current_dir()
         .map_err(|source| CliError::io("read current directory", source))?
-        .join(snapshot_name);
+        .join(&snapshot_name);
 
     let metadata = SnapshotMetadata {
         tool_version: env!("CARGO_PKG_VERSION").to_string(),
@@ -92,7 +97,7 @@ fn run_capture() -> Result<(), CliError> {
         host,
     };
 
-    let mut store = SnapshotStore::create(&snapshot_dir, metadata).map_err(CliError::Store)?;
+    let store = SnapshotStore::create(&snapshot_dir, metadata).map_err(CliError::Store)?;
 
     let probe = runfossil_plan::probe_host();
     let plan = runfossil_plan::build_plan(probe);
@@ -100,24 +105,74 @@ fn run_capture() -> Result<(), CliError> {
         .write_raw_file(Path::new("plan.json"), plan.to_json().as_bytes())
         .map_err(CliError::Store)?;
 
-    runfossil_proc::collect_proc(&mut store).map_err(CliError::Store)?;
-    runfossil_proc::collect_sys(&mut store).map_err(CliError::Store)?;
-    runfossil_proc::collect_dev(&mut store).map_err(CliError::Store)?;
-    runfossil_proc::collect_kmsg(&mut store).map_err(CliError::Store)?;
-    runfossil_proc::collect_crash(&mut store).map_err(CliError::Store)?;
-    runfossil_proc::collect_security(&mut store).map_err(CliError::Store)?;
-    runfossil_proc::collect_run(&mut store).map_err(CliError::Store)?;
-    runfossil_net::collect_netlink(&mut store).map_err(CliError::Store)?;
-    runfossil_service::collect_service(&mut store).map_err(CliError::Store)?;
-    runfossil_proc::collect_scheduler(&mut store).map_err(CliError::Store)?;
-    runfossil_container::collect_container(&mut store).map_err(CliError::Store)?;
+    let cancel = CancelToken::new();
+    let signal_cancel = cancel.clone();
+    let signal_dir = snapshot_dir.clone();
 
-    let finished_at_unix_ns = unix_time_ns()?;
-    store
-        .finalize(&finished_at_unix_ns.to_string())
-        .map_err(CliError::Store)?;
-    println!("{}", snapshot_dir.display());
-    Ok(())
+    let signal_thread = register_signal_handler(signal_cancel, signal_dir);
+
+    let store = Arc::new(std::sync::Mutex::new(store));
+    let store_for_executor = Arc::clone(&store);
+    let tasks = capture_task_list();
+    let budget = CaptureBudget::default();
+
+    let exec_result = executor::run_capture_tasks(store_for_executor, tasks, &budget, cancel);
+
+    signal_thread.join().ok();
+
+    let mut store = match Arc::into_inner(store) {
+        Some(mutex) => match mutex.into_inner() {
+            Ok(store) => store,
+            Err(_) => {
+                return Err(CliError::Store(StoreError::io(
+                    "unlock store after capture",
+                    std::io::Error::other("store mutex poisoned"),
+                )));
+            }
+        },
+        None => {
+            return Err(CliError::Store(StoreError::io(
+                "finalize store",
+                std::io::Error::other("store still referenced after executor"),
+            )));
+        }
+    };
+
+    match exec_result {
+        Ok(()) => {
+            let finished_at_unix_ns = unix_time_ns()?;
+            store
+                .finalize(&finished_at_unix_ns.to_string())
+                .map_err(CliError::Store)?;
+            println!("{}", snapshot_dir.display());
+            Ok(())
+        }
+        Err(ExecutorError::Cancelled) => {
+            let finished_at_unix_ns = unix_time_ns()?;
+            let _ = store.finalize(&finished_at_unix_ns.to_string());
+            eprintln!(
+                "Capture cancelled; partial snapshot preserved at {}",
+                snapshot_dir.display()
+            );
+            println!("{}", snapshot_dir.display());
+            Ok(())
+        }
+        Err(ExecutorError::TaskFailed { name: _, source: _ }) => {
+            let finished_at_unix_ns = unix_time_ns()?;
+            let _ = store.finalize(&finished_at_unix_ns.to_string());
+            eprintln!(
+                "Capture completed with errors; partial snapshot at {}",
+                snapshot_dir.display()
+            );
+            println!("{}", snapshot_dir.display());
+            Ok(())
+        }
+        Err(ExecutorError::GlobalTimeout) => {
+            let finished_at_unix_ns = unix_time_ns()?;
+            let _ = store.finalize(&finished_at_unix_ns.to_string());
+            Err(CliError::CaptureTimeout)
+        }
+    }
 }
 
 fn ensure_no_extra_arg(args: &mut impl Iterator<Item = String>) -> Result<(), CliError> {
@@ -223,6 +278,7 @@ enum CliError {
         source: std::num::ParseIntError,
     },
     ClockBeforeEpoch,
+    CaptureTimeout,
     Io {
         context: &'static str,
         source: std::io::Error,
@@ -244,7 +300,11 @@ impl CliError {
             | Self::MissingArgument { .. } => 64,
             Self::NotRoot { .. } => 77,
             Self::MissingEffectiveUid | Self::ParseUid { .. } | Self::ClockBeforeEpoch => 70,
-            Self::Io { .. } | Self::Store(_) | Self::Pack(_) | Self::Inspector(_) => 74,
+            Self::CaptureTimeout
+            | Self::Io { .. }
+            | Self::Store(_)
+            | Self::Pack(_)
+            | Self::Inspector(_) => 74,
         }
     }
 }
@@ -277,6 +337,7 @@ impl fmt::Display for CliError {
                 )
             }
             Self::ClockBeforeEpoch => formatter.write_str("system clock is before the Unix epoch"),
+            Self::CaptureTimeout => formatter.write_str("global capture timeout exceeded"),
             Self::Io { context, source } => write!(formatter, "{context}: {source}"),
             Self::Store(source) => write!(formatter, "{source}"),
             Self::Pack(source) => write!(formatter, "packaging error: {source}"),
@@ -298,9 +359,98 @@ impl std::error::Error for CliError {
             | Self::MissingArgument { .. }
             | Self::NotRoot { .. }
             | Self::MissingEffectiveUid
-            | Self::ClockBeforeEpoch => None,
+            | Self::ClockBeforeEpoch
+            | Self::CaptureTimeout => None,
         }
     }
+}
+
+/// Register a signal handler that cancels the capture on SIGINT/SIGTERM.
+/// Returns a thread handle that must be joined before process exit.
+fn register_signal_handler(
+    cancel: CancelToken,
+    snapshot_dir: std::path::PathBuf,
+) -> std::thread::JoinHandle<()> {
+    runfossil_signal::install_handlers();
+
+    match std::thread::Builder::new()
+        .name("runfossil-signal".into())
+        .spawn(move || {
+            loop {
+                std::thread::sleep(std::time::Duration::from_millis(100));
+                if runfossil_signal::was_signalled() {
+                    cancel.cancel();
+                    eprintln!(
+                        "Signal received; cancelling capture. Partial snapshot at {}",
+                        snapshot_dir.display()
+                    );
+                    break;
+                }
+            }
+        }) {
+        Ok(handle) => handle,
+        Err(_) => std::thread::spawn(|| {}),
+    }
+}
+
+fn capture_task_list() -> Vec<CaptureTask> {
+    vec![
+        CaptureTask {
+            name: "proc",
+            collector: runfossil_proc::collect_proc,
+            priority: 0,
+        },
+        CaptureTask {
+            name: "sys",
+            collector: runfossil_proc::collect_sys,
+            priority: 1,
+        },
+        CaptureTask {
+            name: "dev",
+            collector: runfossil_proc::collect_dev,
+            priority: 1,
+        },
+        CaptureTask {
+            name: "kmsg",
+            collector: runfossil_proc::collect_kmsg,
+            priority: 0,
+        },
+        CaptureTask {
+            name: "crash",
+            collector: runfossil_proc::collect_crash,
+            priority: 2,
+        },
+        CaptureTask {
+            name: "security",
+            collector: runfossil_proc::collect_security,
+            priority: 2,
+        },
+        CaptureTask {
+            name: "run",
+            collector: runfossil_proc::collect_run,
+            priority: 2,
+        },
+        CaptureTask {
+            name: "netlink",
+            collector: runfossil_net::collect_netlink,
+            priority: 2,
+        },
+        CaptureTask {
+            name: "service",
+            collector: runfossil_service::collect_service,
+            priority: 3,
+        },
+        CaptureTask {
+            name: "scheduler",
+            collector: runfossil_proc::collect_scheduler,
+            priority: 3,
+        },
+        CaptureTask {
+            name: "container",
+            collector: runfossil_container::collect_container,
+            priority: 3,
+        },
+    ]
 }
 
 #[cfg(test)]

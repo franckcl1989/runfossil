@@ -1,3 +1,6 @@
+#![forbid(unsafe_code)]
+#![doc = "Coverage registry: the canonical list of all planned coverage units. Defines source coverage intent independently from per-capture scheduling."]
+
 use runfossil_core::{CoverageDecision, ObjectKind, Priority, SourceSlug};
 
 #[derive(Clone, Debug)]
@@ -960,7 +963,7 @@ pub(crate) fn coverage_registry() -> Vec<CoverageUnit> {
         SourceSlug::Service,
         "manager",
         "manager",
-        CoverageDecision::DeferredNative,
+        CoverageDecision::Collect,
         Priority::P3,
         ObjectKind::NativeDump,
         false,
@@ -971,7 +974,7 @@ pub(crate) fn coverage_registry() -> Vec<CoverageUnit> {
         SourceSlug::Service,
         "units",
         "units",
-        CoverageDecision::DeferredNative,
+        CoverageDecision::Collect,
         Priority::P3,
         ObjectKind::NativeDump,
         false,
@@ -1070,7 +1073,7 @@ pub(crate) fn coverage_registry() -> Vec<CoverageUnit> {
         SourceSlug::Sessions,
         "logind",
         "logind",
-        CoverageDecision::DeferredNative,
+        CoverageDecision::Collect,
         Priority::P3,
         ObjectKind::NativeDump,
         false,
@@ -1345,7 +1348,7 @@ pub(crate) fn coverage_registry() -> Vec<CoverageUnit> {
         SourceSlug::Service,
         "manager",
         "state",
-        CoverageDecision::DeferredNative,
+        CoverageDecision::Collect,
         Priority::P3,
         ObjectKind::NativeDump,
         false,
@@ -1356,7 +1359,7 @@ pub(crate) fn coverage_registry() -> Vec<CoverageUnit> {
         SourceSlug::Service,
         "units",
         "failed",
-        CoverageDecision::DeferredNative,
+        CoverageDecision::Collect,
         Priority::P3,
         ObjectKind::NativeDump,
         false,
@@ -1367,7 +1370,7 @@ pub(crate) fn coverage_registry() -> Vec<CoverageUnit> {
         SourceSlug::Sessions,
         "users",
         "users",
-        CoverageDecision::DeferredNative,
+        CoverageDecision::Collect,
         Priority::P3,
         ObjectKind::NativeDump,
         false,
