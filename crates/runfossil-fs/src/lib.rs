@@ -363,7 +363,11 @@ impl AutoDiscoverConfig {
     }
 
     /// Config for /proc/<pid> per-process: single level, all files except
-    /// dangerous/unbounded entries.
+    /// dangerous/unbounded entries. Memory-mapping files (smaps, maps,
+    /// numa_maps, smaps_rollup) are excluded from auto-discovery because
+    /// their cumulative size on hosts with many processes can exceed the
+    /// capture byte budget; they remain tracked as coverage units for
+    /// planned explicit collection.
     #[must_use]
     pub const fn proc_per_process() -> Self {
         Self {
@@ -379,6 +383,10 @@ impl AutoDiscoverConfig {
                 "projid_map",
                 "setgroups",
                 "reclaim",
+                "smaps",
+                "smaps_rollup",
+                "maps",
+                "numa_maps",
             ],
             max_bytes_per_file: 131_072,
             max_files_per_level: 128,
