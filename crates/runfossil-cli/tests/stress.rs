@@ -7,7 +7,6 @@ mod stress {
     use std::fs;
     use std::path::Path;
     use std::sync::Arc;
-    use std::sync::Mutex;
     use std::sync::atomic::{AtomicU64, Ordering};
 
     use runfossil_core::{EffectiveUid, ManifestStatus, ObjectKind, SourceSlug};
@@ -40,7 +39,7 @@ mod stress {
     #[test]
     fn store_handles_10k_manifest_entries() {
         let d = temp_dir();
-        let mut store = new_store(&d);
+        let store = new_store(&d);
 
         for i in 0..10_000u32 {
             let entry = ManifestEntry::new(
@@ -72,7 +71,7 @@ mod stress {
     #[test]
     fn store_handles_concurrent_writes() {
         let d = temp_dir();
-        let store = Arc::new(Mutex::new(new_store(&d)));
+        let store = Arc::new(new_store(&d));
         let counter = Arc::new(AtomicU64::new(0));
         let threads: Vec<_> = (0..8)
             .map(|_| {
@@ -91,8 +90,7 @@ mod stress {
                         )
                         .with_bytes(256);
 
-                        let mut s = store.lock().expect("lock");
-                        s.record_object(entry).expect("record");
+                        store.record_object(entry).expect("record");
                     }
                 })
             })
@@ -102,10 +100,7 @@ mod stress {
             handle.join().expect("join");
         }
 
-        let mut store = Arc::into_inner(store)
-            .expect("unwrap arc")
-            .into_inner()
-            .expect("unwrap mutex");
+        let store = Arc::into_inner(store).expect("unwrap arc");
         store.finalize("2").expect("finalize");
 
         let manifest_path = d.path().join("snapshot/manifest.json");
@@ -117,7 +112,7 @@ mod stress {
     #[test]
     fn large_error_log_is_writable() {
         let d = temp_dir();
-        let mut store = new_store(&d);
+        let store = new_store(&d);
 
         for i in 0..500u32 {
             let error_entry = ErrorLogEntry::new(
@@ -141,7 +136,7 @@ mod stress {
         let d = temp_dir();
         let snapshot_dir = d.path().join("snapshot");
         {
-            let mut store =
+            let store =
                 SnapshotStore::create(&snapshot_dir, test_metadata()).expect("create store");
 
             for i in 0..1000u32 {
@@ -187,7 +182,7 @@ mod stress {
         let snapshot_dir = d.path().join("snapshot");
         let mut expected: HashMap<String, Vec<u8>> = HashMap::new();
         {
-            let mut store =
+            let store =
                 SnapshotStore::create(&snapshot_dir, test_metadata()).expect("create store");
 
             for i in 0..500u32 {
@@ -235,7 +230,7 @@ mod stress {
         let d = temp_dir();
         let snapshot_dir = d.path().join("snapshot");
         {
-            let mut store =
+            let store =
                 SnapshotStore::create(&snapshot_dir, test_metadata()).expect("create store");
 
             for i in 0..100u32 {
@@ -271,7 +266,7 @@ mod stress {
         let d = temp_dir();
         let snapshot_dir = d.path().join("snapshot");
         {
-            let mut store =
+            let store =
                 SnapshotStore::create(&snapshot_dir, test_metadata()).expect("create store");
 
             for i in 0..500u32 {
@@ -309,7 +304,7 @@ mod stress {
     #[test]
     fn snapshot_with_mixed_statuses_handles_large_count() {
         let d = temp_dir();
-        let mut store = new_store(&d);
+        let store = new_store(&d);
 
         let statuses = [
             ManifestStatus::Captured,
@@ -354,7 +349,7 @@ mod stress {
     #[test]
     fn store_write_and_flush_under_pressure() {
         let d = temp_dir();
-        let mut store = new_store(&d);
+        let store = new_store(&d);
 
         for i in 0..2000u32 {
             let content = format!("cycle {}\n", i);

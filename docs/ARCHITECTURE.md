@@ -145,13 +145,14 @@ Responsibilities:
 The crate must not invoke `systemctl`, `loginctl`, `timedatectl`, or
 `journalctl`.
 
-### runfossil-container
+### Container-Related Host Evidence
 
-Container runtime state is collected from host-side procfs, cgroupfs, and
+Container-related evidence is collected from host-side procfs, cgroupfs, and
 namespace evidence through `runfossil-proc` and `runfossil-fs`. Daemon API
-protocols (Docker, containerd, CRI-O) are excluded from the current
-kernel-focused scope unless the coverage matrix is changed first. Container
-runtime socket detection remains in the host probe for planning purposes.
+protocols (Docker, containerd, CRI-O) are excluded from the current core scope
+unless the Source Taxonomy and Coverage Decision Matrix are changed first.
+Container daemon socket detection remains in the host probe for planning and
+capability metadata.
 
 ### runfossil-pack
 
@@ -284,4 +285,7 @@ implementation without locking the workspace shape:
 | Time sync | `runfossil-service` | metadata |
 | Crash dump store | `runfossil-proc` | metadata, bounded-tree |
 | Hardware management | `runfossil-proc` | bounded-tree |
-| Container runtime | `runfossil-proc` | host-side procfs, cgroup, namespace evidence |
+
+Container-related host evidence is not an independent L1 source family in the
+current taxonomy; it is captured through `/proc`, `/sys`, `/run`, and related
+host-side source families.

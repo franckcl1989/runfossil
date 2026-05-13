@@ -9,9 +9,11 @@ duplicating policy.
 The repository is in Milestone 9 hardening and release-readiness work. It
 contains a Rust 1.95 workspace with baseline implementations for Milestones 1
 through 8 plus the documentation design baseline. Automated hardening gates
-(format, clippy, check, test) pass; production validation requires privileged
-execution environments. Keep implementation work scoped to the current user
-request and the milestone boundaries in `docs/IMPLEMENTATION_PLAN.md`.
+(format, clippy, check, test) pass; Rocky Linux production-like validation and
+benchmark results are recorded, while cross-distribution validation and release
+signing still require external privileged environments. Keep implementation work
+scoped to the current user request and the milestone boundaries in
+`docs/IMPLEMENTATION_PLAN.md`.
 
 Milestone 0 passed `docs/DOCUMENTATION_READINESS_GATE.md` and
 `docs/DESIGN_REVIEW_CHECKLIST.md` before code was introduced. If later

@@ -27,6 +27,13 @@ This document uses contract language deliberately:
 The snapshot directory is the canonical artifact. Archive formats, inspection
 summaries, redaction output, and parsed analysis are derived artifacts.
 
+A complete snapshot means final metadata and the completion marker were written.
+It does not mean every possible Linux runtime byte was copied. Forensic
+completeness is represented by raw evidence plus explicit plan and manifest
+outcomes such as `captured`, `not_found`, `not_present`,
+`skipped_by_policy`, `limited`, `timeout`, `size_limited`, `truncated`, or
+`io_error`.
+
 ## Schema and Compatibility
 
 All machine-readable control files must be UTF-8 JSON unless this specification
@@ -86,7 +93,6 @@ Canonical source slugs:
 | Time synchronization subsystem | `time` |
 | Crash dump store | `crash` |
 | Hardware management interface | `hardware` |
-| Container runtime | `container` |
 
 Manifest `path` values must be relative paths inside the snapshot directory. They
 must not be absolute paths and must not contain `..` components.
@@ -148,7 +154,6 @@ snapshot-.../
     time/
     crash/
     hardware/
-    container/
   CAPTURE_COMPLETE
 ```
 
@@ -186,7 +191,7 @@ netlink/route.dump
 kernel/kmsg.window
 logs/system.window
 service/systemd/units.dump
-container/containerd/containers.dump
+sessions/logind/sessions.dump
 ```
 
 If a source path conflicts because it can be both a file-like object and a
@@ -542,7 +547,7 @@ Detected source availability:
 - Netlink families.
 - systemd or other service manager indicators.
 - journald indicators.
-- container runtime sockets.
+- container daemon socket indicators.
 - kernel features relevant to collection.
 
 ### meta/limits.json

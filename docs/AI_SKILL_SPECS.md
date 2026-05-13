@@ -258,7 +258,9 @@ Validation:
 
 - Documentation Readiness Gate has no blocker before implementation starts;
 - Rust 1.95-compatible commands once the workspace exists;
-- `cargo fmt`;
-- `cargo test`;
+- `cargo fmt --check`;
+- `cargo clippy --workspace --all-targets -- -D warnings`;
+- `cargo check --workspace --all-targets`;
+- `cargo test --workspace`;
 - no project-owned unsafe code;
 - no external command collection.

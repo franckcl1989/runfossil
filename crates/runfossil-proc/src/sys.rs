@@ -72,8 +72,9 @@ fn has_unified_cgroup_v2(root: &Path) -> bool {
 }
 
 /// Collects all /sys evidence into the given store.
-pub(crate) fn collect_sys(store: &mut SnapshotStore) -> Result<(), StoreError> {
+pub(crate) fn collect_sys(store: &SnapshotStore) -> Result<(), StoreError> {
     record_cgroup_version(store)?;
+    collect_cgroup_tree(store)?;
     collect_pstore(store)?;
     collect_power(store)?;
     collect_class_net(store)?;
@@ -89,7 +90,7 @@ pub(crate) fn collect_sys(store: &mut SnapshotStore) -> Result<(), StoreError> {
     Ok(())
 }
 
-fn record_cgroup_version(store: &mut SnapshotStore) -> Result<(), StoreError> {
+fn record_cgroup_version(store: &SnapshotStore) -> Result<(), StoreError> {
     let version = detect_cgroup_version();
     let content = format!("cgroup_version: {}\n", version.as_str());
 
@@ -112,7 +113,175 @@ fn record_cgroup_version(store: &mut SnapshotStore) -> Result<(), StoreError> {
     Ok(())
 }
 
-fn collect_pstore(store: &mut SnapshotStore) -> Result<(), StoreError> {
+fn collect_cgroup_tree(store: &SnapshotStore) -> Result<(), StoreError> {
+    let root = Path::new("/sys/fs/cgroup");
+
+    if !root.exists() {
+        let entry = ManifestEntry::new(
+            "sys.cgroup.status",
+            SourceSlug::Sys,
+            "cgroup",
+            "status",
+            ObjectKind::Metadata,
+            ManifestStatus::NotFound,
+        )
+        .with_reason("/sys/fs/cgroup not present on this host")
+        .with_limits(ObjectLimits::new(0, 50, 1, 0));
+
+        store.record_object(entry)?;
+        return Ok(());
+    }
+
+    let traversal_limits = BoundedTraversalLimits::new(128, 4, 1000);
+    let read_limits = BoundedReadLimits::new(262_144, 200);
+    walk_cgroup_tree(store, root, root, traversal_limits, read_limits, 0)
+}
+
+fn walk_cgroup_tree(
+    store: &SnapshotStore,
+    base: &Path,
+    current: &Path,
+    traversal_limits: BoundedTraversalLimits,
+    read_limits: BoundedReadLimits,
+    depth: u32,
+) -> Result<(), StoreError> {
+    if depth >= traversal_limits.max_depth {
+        return Ok(());
+    }
+
+    let listing = match list_dir_entries(current, traversal_limits) {
+        Ok(listing) => listing,
+        Err(error) => {
+            let rel = current.strip_prefix(base).unwrap_or(current);
+            let object = if rel.as_os_str().is_empty() {
+                "root".to_string()
+            } else {
+                rel.to_string_lossy().into_owned()
+            };
+            let id = id_component(&object);
+            let status = fs_error_to_manifest_status(&error);
+            store.record_object(
+                ManifestEntry::new(
+                    format!("sys.cgroup.{id}.listing"),
+                    SourceSlug::Sys,
+                    "cgroup",
+                    object,
+                    ObjectKind::DirListing,
+                    status,
+                )
+                .with_reason(error.to_string())
+                .with_limits(ObjectLimits::new(
+                    0,
+                    traversal_limits.timeout_ms,
+                    traversal_limits.max_files,
+                    traversal_limits.max_depth,
+                )),
+            )?;
+            return Ok(());
+        }
+    };
+
+    for entry in &listing.entries {
+        let source_path = current.join(&entry.name);
+        if entry.is_dir {
+            walk_cgroup_tree(
+                store,
+                base,
+                &source_path,
+                traversal_limits,
+                read_limits,
+                depth + 1,
+            )?;
+            continue;
+        }
+
+        let rel = source_path.strip_prefix(base).unwrap_or(&source_path);
+        let object = rel.to_string_lossy().into_owned();
+        let id = id_component(&object);
+
+        match read_file_bounded(&source_path, read_limits) {
+            Ok(result) => {
+                let out_path = output_path(&source_path);
+                let bytes = result.content.len() as u64;
+                store.write_raw_file(&out_path, &result.content)?;
+                let status = if result.was_truncated {
+                    ManifestStatus::Truncated
+                } else {
+                    ManifestStatus::Captured
+                };
+                store.record_object(
+                    ManifestEntry::new(
+                        format!("sys.cgroup.{id}"),
+                        SourceSlug::Sys,
+                        "cgroup",
+                        object,
+                        ObjectKind::File,
+                        status,
+                    )
+                    .with_path(out_path.to_string_lossy())
+                    .with_bytes(bytes)
+                    .with_limits(ObjectLimits::new(
+                        read_limits.max_bytes,
+                        read_limits.timeout_ms,
+                        1,
+                        0,
+                    )),
+                )?;
+            }
+            Err(error) => {
+                let status = fs_error_to_manifest_status(&error);
+                store.record_object(
+                    ManifestEntry::new(
+                        format!("sys.cgroup.{id}"),
+                        SourceSlug::Sys,
+                        "cgroup",
+                        object,
+                        ObjectKind::File,
+                        status,
+                    )
+                    .with_reason(error.to_string())
+                    .with_limits(ObjectLimits::new(
+                        read_limits.max_bytes,
+                        read_limits.timeout_ms,
+                        1,
+                        0,
+                    )),
+                )?;
+            }
+        }
+    }
+
+    if listing.was_truncated {
+        let rel = current.strip_prefix(base).unwrap_or(current);
+        let object = if rel.as_os_str().is_empty() {
+            "root".to_string()
+        } else {
+            rel.to_string_lossy().into_owned()
+        };
+        let id = id_component(&object);
+        store.record_object(
+            ManifestEntry::new(
+                format!("sys.cgroup.{id}.listing"),
+                SourceSlug::Sys,
+                "cgroup",
+                object,
+                ObjectKind::DirListing,
+                ManifestStatus::Truncated,
+            )
+            .with_reason("cgroup directory listing reached file-count limit")
+            .with_limits(ObjectLimits::new(
+                0,
+                traversal_limits.timeout_ms,
+                traversal_limits.max_files,
+                traversal_limits.max_depth,
+            )),
+        )?;
+    }
+
+    Ok(())
+}
+
+fn collect_pstore(store: &SnapshotStore) -> Result<(), StoreError> {
     let pstore_root = Path::new("/sys/fs/pstore");
 
     if !pstore_root.exists() {
@@ -238,14 +407,14 @@ fn collect_pstore(store: &mut SnapshotStore) -> Result<(), StoreError> {
     Ok(())
 }
 
-fn collect_power(store: &mut SnapshotStore) -> Result<(), StoreError> {
+fn collect_power(store: &SnapshotStore) -> Result<(), StoreError> {
     let power_dir = Path::new("/sys/power");
     if !power_dir.exists() {
         return Ok(());
     }
 
     let limits = BoundedReadLimits::new(4_096, 100);
-    let power_files = ["state", "disk", "pm_test", "wakeup_count"];
+    let power_files = ["pm_test", "wakeup_count"];
 
     for name in &power_files {
         let source_path = power_dir.join(*name);
@@ -306,7 +475,7 @@ fn collect_power(store: &mut SnapshotStore) -> Result<(), StoreError> {
     Ok(())
 }
 
-fn collect_class_net(store: &mut SnapshotStore) -> Result<(), StoreError> {
+fn collect_class_net(store: &SnapshotStore) -> Result<(), StoreError> {
     let net_dir = Path::new("/sys/class/net");
     if !net_dir.exists() {
         return Ok(());
@@ -315,7 +484,7 @@ fn collect_class_net(store: &mut SnapshotStore) -> Result<(), StoreError> {
     collect_bounded_device_tree(store, net_dir, "net", &[], 1_048_576, 16, 2)
 }
 
-fn collect_block(store: &mut SnapshotStore) -> Result<(), StoreError> {
+fn collect_block(store: &SnapshotStore) -> Result<(), StoreError> {
     let block_dir = Path::new("/sys/block");
     if !block_dir.exists() {
         return Ok(());
@@ -325,7 +494,7 @@ fn collect_block(store: &mut SnapshotStore) -> Result<(), StoreError> {
 }
 
 fn collect_bounded_device_tree(
-    store: &mut SnapshotStore,
+    store: &SnapshotStore,
     root: &Path,
     domain: &str,
     attr_files: &[&str],
@@ -438,7 +607,7 @@ fn collect_bounded_device_tree(
 }
 
 fn sys_read_and_record(
-    store: &mut SnapshotStore,
+    store: &SnapshotStore,
     source_path: &Path,
     domain: &str,
     device_name: &str,
@@ -446,63 +615,105 @@ fn sys_read_and_record(
     limits: BoundedReadLimits,
     kind: ObjectKind,
 ) -> Result<(), StoreError> {
-    let result = match kind {
-        ObjectKind::Symlink => {
-            if let Ok(target) = read_link_bounded(source_path, limits) {
+    match kind {
+        ObjectKind::Symlink => match read_link_bounded(source_path, limits) {
+            Ok(target) => {
                 let out_path = output_path(source_path);
                 let content = target.to_string_lossy().into_owned();
                 let bytes = content.len() as u64;
                 store.write_raw_file(&out_path, content.as_bytes())?;
-                Some((out_path, bytes, false))
-            } else {
-                None
+                let entry = ManifestEntry::new(
+                    format!("sys.{domain}.{device_name}.{attr_name}"),
+                    SourceSlug::Sys,
+                    domain,
+                    format!("{device_name}/{attr_name}"),
+                    kind,
+                    ManifestStatus::Captured,
+                )
+                .with_path(out_path.to_string_lossy())
+                .with_bytes(bytes)
+                .with_limits(ObjectLimits::new(
+                    limits.max_bytes,
+                    limits.timeout_ms,
+                    1,
+                    0,
+                ));
+                store.record_object(entry)?;
             }
-        }
+            Err(error) => {
+                let status = fs_error_to_manifest_status(&error);
+                let entry = ManifestEntry::new(
+                    format!("sys.{domain}.{device_name}.{attr_name}"),
+                    SourceSlug::Sys,
+                    domain,
+                    format!("{device_name}/{attr_name}"),
+                    kind,
+                    status,
+                )
+                .with_reason(error.to_string())
+                .with_limits(ObjectLimits::new(
+                    limits.max_bytes,
+                    limits.timeout_ms,
+                    1,
+                    0,
+                ));
+                store.record_object(entry)?;
+            }
+        },
         _ => match read_file_bounded(source_path, limits) {
             Ok(r) => {
                 let out_path = output_path(source_path);
                 let bytes = r.content.len() as u64;
                 store.write_raw_file(&out_path, &r.content)?;
-                Some((out_path, bytes, r.was_truncated))
-            }
-            Err(_) => None,
-        },
-    };
 
-    if let Some((out_path, bytes, was_truncated)) = result {
-        let status = if was_truncated {
-            ManifestStatus::Truncated
-        } else {
-            ManifestStatus::Captured
-        };
-        let entry = ManifestEntry::new(
-            format!("sys.{domain}.{device_name}.{attr_name}"),
-            SourceSlug::Sys,
-            domain,
-            format!("{device_name}/{attr_name}"),
-            kind,
-            status,
-        )
-        .with_path(out_path.to_string_lossy())
-        .with_bytes(bytes)
-        .with_limits(ObjectLimits::new(limits.max_bytes, limits.timeout_ms, 1, 0));
-        store.record_object(entry)?;
-    } else {
-        let entry = ManifestEntry::new(
-            format!("sys.{domain}.{device_name}.{attr_name}"),
-            SourceSlug::Sys,
-            domain,
-            format!("{device_name}/{attr_name}"),
-            kind,
-            ManifestStatus::NotFound,
-        )
-        .with_limits(ObjectLimits::new(limits.max_bytes, limits.timeout_ms, 1, 0));
-        store.record_object(entry)?;
+                let status = if r.was_truncated {
+                    ManifestStatus::Truncated
+                } else {
+                    ManifestStatus::Captured
+                };
+                let entry = ManifestEntry::new(
+                    format!("sys.{domain}.{device_name}.{attr_name}"),
+                    SourceSlug::Sys,
+                    domain,
+                    format!("{device_name}/{attr_name}"),
+                    kind,
+                    status,
+                )
+                .with_path(out_path.to_string_lossy())
+                .with_bytes(bytes)
+                .with_limits(ObjectLimits::new(
+                    limits.max_bytes,
+                    limits.timeout_ms,
+                    1,
+                    0,
+                ));
+                store.record_object(entry)?;
+            }
+            Err(error) => {
+                let status = fs_error_to_manifest_status(&error);
+                let entry = ManifestEntry::new(
+                    format!("sys.{domain}.{device_name}.{attr_name}"),
+                    SourceSlug::Sys,
+                    domain,
+                    format!("{device_name}/{attr_name}"),
+                    kind,
+                    status,
+                )
+                .with_reason(error.to_string())
+                .with_limits(ObjectLimits::new(
+                    limits.max_bytes,
+                    limits.timeout_ms,
+                    1,
+                    0,
+                ));
+                store.record_object(entry)?;
+            }
+        },
     }
     Ok(())
 }
 
-fn collect_devices_cpu(store: &mut SnapshotStore) -> Result<(), StoreError> {
+fn collect_devices_cpu(store: &SnapshotStore) -> Result<(), StoreError> {
     let root = Path::new("/sys/devices/system/cpu");
     if !root.exists() {
         return Ok(());
@@ -510,7 +721,7 @@ fn collect_devices_cpu(store: &mut SnapshotStore) -> Result<(), StoreError> {
     collect_bounded_device_tree(store, root, "devices_cpu", &[], 1_048_576, 64, 3)
 }
 
-fn collect_devices_node(store: &mut SnapshotStore) -> Result<(), StoreError> {
+fn collect_devices_node(store: &SnapshotStore) -> Result<(), StoreError> {
     let root = Path::new("/sys/devices/system/node");
     if !root.exists() {
         return Ok(());
@@ -518,7 +729,7 @@ fn collect_devices_node(store: &mut SnapshotStore) -> Result<(), StoreError> {
     collect_bounded_device_tree(store, root, "devices_node", &[], 1_048_576, 32, 3)
 }
 
-fn collect_hwmon(store: &mut SnapshotStore) -> Result<(), StoreError> {
+fn collect_hwmon(store: &SnapshotStore) -> Result<(), StoreError> {
     let root = Path::new("/sys/class/hwmon");
     if !root.exists() {
         return Ok(());
@@ -526,7 +737,7 @@ fn collect_hwmon(store: &mut SnapshotStore) -> Result<(), StoreError> {
     collect_bounded_device_tree(store, root, "hwmon", &[], 1_048_576, 64, 2)
 }
 
-fn collect_thermal(store: &mut SnapshotStore) -> Result<(), StoreError> {
+fn collect_thermal(store: &SnapshotStore) -> Result<(), StoreError> {
     let root = Path::new("/sys/class/thermal");
     if !root.exists() {
         return Ok(());
@@ -534,7 +745,7 @@ fn collect_thermal(store: &mut SnapshotStore) -> Result<(), StoreError> {
     collect_bounded_device_tree(store, root, "thermal", &[], 1_048_576, 32, 2)
 }
 
-fn collect_module_sys(store: &mut SnapshotStore) -> Result<(), StoreError> {
+fn collect_module_sys(store: &SnapshotStore) -> Result<(), StoreError> {
     let root = Path::new("/sys/module");
     if !root.exists() {
         return Ok(());
@@ -542,7 +753,7 @@ fn collect_module_sys(store: &mut SnapshotStore) -> Result<(), StoreError> {
     collect_bounded_device_tree(store, root, "module", &[], 1_048_576, 256, 3)
 }
 
-fn collect_kernel_sys(store: &mut SnapshotStore) -> Result<(), StoreError> {
+fn collect_kernel_sys(store: &SnapshotStore) -> Result<(), StoreError> {
     let root = Path::new("/sys/kernel");
     if !root.exists() {
         return Ok(());
@@ -550,7 +761,7 @@ fn collect_kernel_sys(store: &mut SnapshotStore) -> Result<(), StoreError> {
     collect_bounded_device_tree(store, root, "kernel", &[], 1_048_576, 64, 3)
 }
 
-fn collect_firmware_sys(store: &mut SnapshotStore) -> Result<(), StoreError> {
+fn collect_firmware_sys(store: &SnapshotStore) -> Result<(), StoreError> {
     let root = Path::new("/sys/firmware");
     if !root.exists() {
         return Ok(());
@@ -558,10 +769,33 @@ fn collect_firmware_sys(store: &mut SnapshotStore) -> Result<(), StoreError> {
     collect_bounded_device_tree(store, root, "firmware", &[], 1_048_576, 128, 3)
 }
 
-fn collect_power_supply(store: &mut SnapshotStore) -> Result<(), StoreError> {
+fn collect_power_supply(store: &SnapshotStore) -> Result<(), StoreError> {
     let root = Path::new("/sys/class/power_supply");
     if !root.exists() {
         return Ok(());
     }
     collect_bounded_device_tree(store, root, "power_supply", &[], 1_048_576, 32, 2)
+}
+
+fn id_component(value: &str) -> String {
+    let mut output = String::with_capacity(value.len());
+    for byte in value.bytes() {
+        match byte {
+            b'a'..=b'z' | b'0'..=b'9' => output.push(byte as char),
+            b'A'..=b'Z' => output.push((byte + 32) as char),
+            _ => {
+                if !output.is_empty() && !output.ends_with('.') {
+                    output.push('.');
+                }
+            }
+        }
+    }
+    if output.ends_with('.') {
+        output.pop();
+    }
+    if output.is_empty() {
+        "root".to_string()
+    } else {
+        output
+    }
 }

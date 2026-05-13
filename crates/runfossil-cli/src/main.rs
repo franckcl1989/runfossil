@@ -11,7 +11,7 @@ use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use nix::sys::signal::{SigSet, SigmaskHow, Signal, pthread_sigmask};
-use runfossil_core::EffectiveUid;
+use runfossil_core::{EffectiveUid, PlanDecision, Priority, SourceSlug};
 use runfossil_store::{HostMetadata, SnapshotMetadata, SnapshotStore, StoreError};
 
 mod executor;
@@ -148,7 +148,7 @@ fn run_capture(output_dir: Option<PathBuf>, quiet: bool) -> Result<(), CliError>
     let cancel = CancelToken::new();
     install_signal_handler(cancel.clone(), snapshot_dir.clone());
 
-    let store = Arc::new(std::sync::Mutex::new(store));
+    let store = Arc::new(store);
     let store_for_executor = Arc::clone(&store);
     let tasks = capture_task_list(&plan);
     let budget = CaptureBudget::default();
@@ -160,27 +160,11 @@ fn run_capture(output_dir: Option<PathBuf>, quiet: bool) -> Result<(), CliError>
     match exec_result {
         Ok(()) => {
             let finished_at_unix_ns = unix_time_ns()?;
-            {
-                let mut store_guard = store.lock().map_err(|_| {
-                    CliError::Store(StoreError::io(
-                        "finalize store",
-                        std::io::Error::other("store mutex poisoned"),
-                    ))
-                })?;
-                store_guard
-                    .finalize(&finished_at_unix_ns.to_string())
-                    .map_err(CliError::Store)?;
-            }
+            store
+                .finalize(&finished_at_unix_ns.to_string())
+                .map_err(CliError::Store)?;
             let elapsed = capture_start.elapsed();
-            let entry_count = {
-                let guard = store.lock().map_err(|_| {
-                    CliError::Store(StoreError::io(
-                        "read entry count",
-                        std::io::Error::other("store mutex poisoned"),
-                    ))
-                })?;
-                guard.entry_count()
-            };
+            let entry_count = store.entry_count();
             if !quiet {
                 eprintln!(
                     "Capture complete: {} objects in {:.1}s",
@@ -193,17 +177,9 @@ fn run_capture(output_dir: Option<PathBuf>, quiet: bool) -> Result<(), CliError>
         }
         Err(ExecutorError::Cancelled) => {
             let finished_at_unix_ns = unix_time_ns()?;
-            {
-                let mut store_guard = store.lock().map_err(|_| {
-                    CliError::Store(StoreError::io(
-                        "close partial store",
-                        std::io::Error::other("store mutex poisoned"),
-                    ))
-                })?;
-                store_guard
-                    .close_partial(&finished_at_unix_ns.to_string())
-                    .map_err(CliError::Store)?;
-            }
+            store
+                .close_partial(&finished_at_unix_ns.to_string())
+                .map_err(CliError::Store)?;
             if !quiet {
                 eprintln!(
                     "Capture cancelled; partial snapshot preserved at {}",
@@ -215,17 +191,9 @@ fn run_capture(output_dir: Option<PathBuf>, quiet: bool) -> Result<(), CliError>
         }
         Err(ExecutorError::TaskFailed { name: _, source: _ }) => {
             let finished_at_unix_ns = unix_time_ns()?;
-            {
-                let mut store_guard = store.lock().map_err(|_| {
-                    CliError::Store(StoreError::io(
-                        "close partial store",
-                        std::io::Error::other("store mutex poisoned"),
-                    ))
-                })?;
-                store_guard
-                    .close_partial(&finished_at_unix_ns.to_string())
-                    .map_err(CliError::Store)?;
-            }
+            store
+                .close_partial(&finished_at_unix_ns.to_string())
+                .map_err(CliError::Store)?;
             if !quiet {
                 eprintln!(
                     "Capture completed with errors; partial snapshot at {}",
@@ -237,17 +205,9 @@ fn run_capture(output_dir: Option<PathBuf>, quiet: bool) -> Result<(), CliError>
         }
         Err(ExecutorError::GlobalTimeout) => {
             let finished_at_unix_ns = unix_time_ns()?;
-            {
-                let mut store_guard = store.lock().map_err(|_| {
-                    CliError::Store(StoreError::io(
-                        "close partial store",
-                        std::io::Error::other("store mutex poisoned"),
-                    ))
-                })?;
-                store_guard
-                    .close_partial(&finished_at_unix_ns.to_string())
-                    .map_err(CliError::Store)?;
-            }
+            store
+                .close_partial(&finished_at_unix_ns.to_string())
+                .map_err(CliError::Store)?;
             Err(CliError::CaptureTimeout)
         }
         Err(ExecutorError::ByteBudgetExceeded {
@@ -255,17 +215,9 @@ fn run_capture(output_dir: Option<PathBuf>, quiet: bool) -> Result<(), CliError>
             max_bytes: _,
         }) => {
             let finished_at_unix_ns = unix_time_ns()?;
-            {
-                let mut store_guard = store.lock().map_err(|_| {
-                    CliError::Store(StoreError::io(
-                        "close partial store",
-                        std::io::Error::other("store mutex poisoned"),
-                    ))
-                })?;
-                store_guard
-                    .close_partial(&finished_at_unix_ns.to_string())
-                    .map_err(CliError::Store)?;
-            }
+            store
+                .close_partial(&finished_at_unix_ns.to_string())
+                .map_err(CliError::Store)?;
             Err(CliError::ByteBudgetExceeded)
         }
     }
@@ -546,75 +498,146 @@ fn capture_signal_set() -> SigSet {
 }
 
 fn capture_task_list(plan: &runfossil_plan::CapturePlan) -> Vec<CaptureTask> {
-    let systemd = plan.probes().systemd_detected;
-    let mut tasks = Vec::with_capacity(10);
+    let mut tasks = Vec::with_capacity(12);
 
-    tasks.push(CaptureTask {
-        name: "proc",
-        collector: runfossil_proc::collect_proc,
-        priority: 0,
-    });
-    tasks.push(CaptureTask {
-        name: "sys",
-        collector: runfossil_proc::collect_sys,
-        priority: 1,
-    });
-    tasks.push(CaptureTask {
-        name: "dev",
-        collector: runfossil_proc::collect_dev,
-        priority: 1,
-    });
-    tasks.push(CaptureTask {
-        name: "kmsg",
-        collector: runfossil_proc::collect_kmsg,
-        priority: 0,
-    });
-    tasks.push(CaptureTask {
-        name: "crash",
-        collector: runfossil_proc::collect_crash,
-        priority: 2,
-    });
-    tasks.push(CaptureTask {
-        name: "security",
-        collector: runfossil_proc::collect_security,
-        priority: 2,
-    });
-    tasks.push(CaptureTask {
-        name: "run",
-        collector: runfossil_proc::collect_run,
-        priority: 2,
-    });
-    tasks.push(CaptureTask {
-        name: "netlink",
-        collector: runfossil_net::collect_netlink,
-        priority: 2,
-    });
-    if systemd {
-        tasks.push(CaptureTask {
-            name: "service",
-            collector: runfossil_service::collect_service,
-            priority: 3,
-        });
-        tasks.push(CaptureTask {
-            name: "scheduler",
-            collector: runfossil_proc::collect_scheduler,
-            priority: 3,
-        });
-    } else {
-        tasks.push(CaptureTask {
-            name: "scheduler",
-            collector: runfossil_proc::collect_scheduler,
-            priority: 3,
-        });
-    }
+    push_source_task(
+        &mut tasks,
+        plan,
+        &[SourceSlug::Proc],
+        "proc",
+        runfossil_proc::collect_proc,
+    );
+    push_source_task(
+        &mut tasks,
+        plan,
+        &[SourceSlug::Sys, SourceSlug::Hardware],
+        "sys",
+        runfossil_proc::collect_sys,
+    );
+    push_source_task(
+        &mut tasks,
+        plan,
+        &[SourceSlug::Dev],
+        "dev",
+        runfossil_proc::collect_dev,
+    );
+    push_source_task(
+        &mut tasks,
+        plan,
+        &[SourceSlug::Kernel],
+        "kmsg",
+        runfossil_proc::collect_kmsg,
+    );
+    push_source_task(
+        &mut tasks,
+        plan,
+        &[SourceSlug::Crash],
+        "crash",
+        runfossil_proc::collect_crash,
+    );
+    push_source_task(
+        &mut tasks,
+        plan,
+        &[SourceSlug::Security],
+        "security",
+        runfossil_proc::collect_security,
+    );
+    push_source_task(
+        &mut tasks,
+        plan,
+        &[SourceSlug::Run],
+        "run",
+        runfossil_proc::collect_run,
+    );
+    push_source_task(
+        &mut tasks,
+        plan,
+        &[SourceSlug::Netlink],
+        "netlink",
+        runfossil_net::collect_netlink,
+    );
+    push_source_task(
+        &mut tasks,
+        plan,
+        &[SourceSlug::Logs],
+        "logs",
+        runfossil_service::collect_logs,
+    );
+    push_source_task(
+        &mut tasks,
+        plan,
+        &[SourceSlug::Time],
+        "time",
+        runfossil_service::collect_time,
+    );
+    push_source_task(
+        &mut tasks,
+        plan,
+        &[SourceSlug::Service, SourceSlug::Sessions],
+        "service",
+        runfossil_service::collect_service,
+    );
+    push_source_task(
+        &mut tasks,
+        plan,
+        &[SourceSlug::Scheduler],
+        "scheduler",
+        runfossil_proc::collect_scheduler,
+    );
 
     tasks
+}
+
+fn push_source_task(
+    tasks: &mut Vec<CaptureTask>,
+    plan: &runfossil_plan::CapturePlan,
+    sources: &[SourceSlug],
+    name: &'static str,
+    collector: executor::CollectorFn,
+) {
+    if let Some(priority) = selected_source_priority(plan, sources) {
+        tasks.push(CaptureTask {
+            name,
+            collector,
+            priority,
+        });
+    }
+}
+
+fn selected_source_priority(
+    plan: &runfossil_plan::CapturePlan,
+    sources: &[SourceSlug],
+) -> Option<u8> {
+    plan.tasks()
+        .iter()
+        .filter(|task| sources.contains(&task.source) && should_execute(task.decision))
+        .map(|task| priority_rank(task.priority))
+        .min()
+}
+
+const fn should_execute(decision: PlanDecision) -> bool {
+    matches!(decision, PlanDecision::Scheduled | PlanDecision::Limited)
+}
+
+const fn priority_rank(priority: Priority) -> u8 {
+    match priority {
+        Priority::P0 => 0,
+        Priority::P1 => 1,
+        Priority::P2 => 2,
+        Priority::P3 => 3,
+        Priority::P4 => 4,
+        Priority::NotApplicable => u8::MAX,
+    }
 }
 
 #[cfg(test)]
 #[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
     use super::*;
+    use runfossil_core::CoverageDecision;
+    use runfossil_plan::{
+        CapturePlan, CapturePlanProbes, PlannedTask, PressureLevels, RiskLevel, TaskLimits,
+    };
 
     #[test]
     fn parses_effective_uid_from_proc_status() {
@@ -652,5 +675,53 @@ mod tests {
         assert_eq!(time_part.len(), 16); // 8 digits + T + 6 digits + Z
         assert!(time_part.contains('T'));
         assert!(time_part.ends_with('Z'));
+    }
+
+    #[test]
+    fn capture_task_list_uses_plan_decisions() {
+        let mut plan = CapturePlan::new(
+            "test",
+            CapturePlanProbes::empty(),
+            PressureLevels::default(),
+        );
+        plan.push(planned_task(
+            "proc.meminfo",
+            SourceSlug::Proc,
+            PlanDecision::SkippedByPolicy,
+            Priority::P0,
+        ));
+        plan.push(planned_task(
+            "logs.syslog",
+            SourceSlug::Logs,
+            PlanDecision::Scheduled,
+            Priority::P3,
+        ));
+
+        let tasks = capture_task_list(&plan);
+
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].name, "logs");
+        assert_eq!(tasks[0].priority, 3);
+    }
+
+    fn planned_task(
+        id: &str,
+        source: SourceSlug,
+        decision: PlanDecision,
+        priority: Priority,
+    ) -> PlannedTask {
+        PlannedTask {
+            id: id.to_string(),
+            source,
+            domain: "test".to_string(),
+            object: "object".to_string(),
+            coverage_decision: CoverageDecision::Collect,
+            decision,
+            priority,
+            risk: RiskLevel::Low,
+            reason: "test".to_string(),
+            limits: TaskLimits::new(1, 1, 1, 0),
+            dependencies: Vec::new(),
+        }
     }
 }

@@ -2,8 +2,8 @@
 #![doc = "Snapshot store session: directory management, manifest tracking, error logging, and partial snapshot behavior."]
 
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, MutexGuard};
 
 use runfossil_core::{ManifestStatus, SourceSlug, validate_relative_artifact_path};
 
@@ -100,9 +100,14 @@ impl ErrorLogEntry {
 pub struct SnapshotStore {
     snapshot_dir: PathBuf,
     metadata: SnapshotMetadata,
+    state: Mutex<SnapshotState>,
+    bytes_written: Arc<AtomicU64>,
+}
+
+#[derive(Debug)]
+struct SnapshotState {
     manifest_entries: Vec<ManifestEntry>,
     finalized: bool,
-    bytes_written: Arc<AtomicU64>,
 }
 
 impl SnapshotStore {
@@ -149,8 +154,10 @@ impl SnapshotStore {
         Ok(Self {
             snapshot_dir,
             metadata,
-            manifest_entries: Vec::new(),
-            finalized: false,
+            state: Mutex::new(SnapshotState {
+                manifest_entries: Vec::new(),
+                finalized: false,
+            }),
             bytes_written: Arc::new(AtomicU64::new(0)),
         })
     }
@@ -164,11 +171,12 @@ impl SnapshotStore {
     /// Records a manifest object entry in memory. Entries are written to
     /// `manifest.json` when [`finalize`](Self::finalize) or
     /// [`close_partial`](Self::close_partial) is called.
-    pub fn record_object(&mut self, entry: ManifestEntry) -> Result<(), StoreError> {
-        if self.finalized {
+    pub fn record_object(&self, entry: ManifestEntry) -> Result<(), StoreError> {
+        let mut state = self.lock_state("record manifest object")?;
+        if state.finalized {
             return Err(StoreError::AlreadyFinalized);
         }
-        self.manifest_entries.push(entry);
+        state.manifest_entries.push(entry);
         Ok(())
     }
 
@@ -176,8 +184,14 @@ impl SnapshotStore {
     /// immediately (append-only) so that partial snapshots preserve error
     /// context even if the process is killed mid-capture.
     pub fn log_error(&self, entry: &ErrorLogEntry) -> Result<(), StoreError> {
+        let state = self.lock_state("append error log")?;
+        if state.finalized {
+            return Err(StoreError::AlreadyFinalized);
+        }
         let path = self.snapshot_dir.join(ERRORS_FILE);
-        append_line(&path, &entry.to_json_line())
+        let result = append_line(&path, &entry.to_json_line());
+        drop(state);
+        result
     }
 
     /// Writes a raw evidence file atomically into the snapshot directory.
@@ -196,6 +210,10 @@ impl SnapshotStore {
             }
         })?;
 
+        let state = self.lock_state("write raw file")?;
+        if state.finalized {
+            return Err(StoreError::AlreadyFinalized);
+        }
         let full_path = self.snapshot_dir.join(artifact_path);
         if let Some(parent) = full_path.parent()
             && !parent.exists()
@@ -203,6 +221,7 @@ impl SnapshotStore {
             create_dir_all(parent)?;
         }
         write_atomic_bytes(&full_path, contents)?;
+        drop(state);
         self.bytes_written
             .fetch_add(contents.len() as u64, Ordering::Release);
         Ok(())
@@ -213,14 +232,15 @@ impl SnapshotStore {
     /// creates the `CAPTURE_COMPLETE` marker.
     ///
     /// After finalization, further writes are rejected.
-    pub fn finalize(&mut self, finished_at_unix_ns: &str) -> Result<(), StoreError> {
-        if self.finalized {
+    pub fn finalize(&self, finished_at_unix_ns: &str) -> Result<(), StoreError> {
+        let mut state = self.lock_state("finalize snapshot")?;
+        if state.finalized {
             return Err(StoreError::AlreadyFinalized);
         }
 
         let manifest_json = build_manifest_json(
             &self.metadata,
-            &self.manifest_entries,
+            &state.manifest_entries,
             finished_at_unix_ns,
             true,
         );
@@ -233,7 +253,7 @@ impl SnapshotStore {
 
         write_atomic(&self.snapshot_dir.join(COMPLETE_MARKER), "")?;
 
-        self.finalized = true;
+        state.finalized = true;
         Ok(())
     }
 
@@ -242,14 +262,15 @@ impl SnapshotStore {
     /// create `CAPTURE_COMPLETE`.
     ///
     /// After partial close, further writes are rejected.
-    pub fn close_partial(&mut self, finished_at_unix_ns: &str) -> Result<(), StoreError> {
-        if self.finalized {
+    pub fn close_partial(&self, finished_at_unix_ns: &str) -> Result<(), StoreError> {
+        let mut state = self.lock_state("close partial snapshot")?;
+        if state.finalized {
             return Err(StoreError::AlreadyFinalized);
         }
 
         let manifest_json = build_manifest_json(
             &self.metadata,
-            &self.manifest_entries,
+            &state.manifest_entries,
             finished_at_unix_ns,
             false,
         );
@@ -260,14 +281,17 @@ impl SnapshotStore {
             &partial_runtime_json(&self.metadata, finished_at_unix_ns),
         )?;
 
-        self.finalized = true;
+        state.finalized = true;
         Ok(())
     }
 
     /// Returns the number of manifest entries recorded so far.
     #[must_use]
     pub fn entry_count(&self) -> usize {
-        self.manifest_entries.len()
+        match self.state.lock() {
+            Ok(state) => state.manifest_entries.len(),
+            Err(_) => 0,
+        }
     }
 
     /// Returns the total bytes written to raw evidence files so far.
@@ -281,6 +305,15 @@ impl SnapshotStore {
     #[must_use]
     pub fn bytes_written_counter(&self) -> Arc<AtomicU64> {
         Arc::clone(&self.bytes_written)
+    }
+
+    fn lock_state(
+        &self,
+        context: &'static str,
+    ) -> Result<MutexGuard<'_, SnapshotState>, StoreError> {
+        self.state
+            .lock()
+            .map_err(|_| StoreError::io(context, std::io::Error::other("store mutex poisoned")))
     }
 }
 
@@ -489,7 +522,7 @@ mod tests {
         let dir = unique_test_dir("finalize");
         let metadata = test_metadata();
 
-        let mut store = SnapshotStore::create(&dir, metadata)?;
+        let store = SnapshotStore::create(&dir, metadata)?;
 
         let entry = ManifestEntry::new(
             "proc.system.stat",
@@ -562,7 +595,7 @@ mod tests {
         let dir = unique_test_dir("partial");
         let metadata = test_metadata();
 
-        let mut store = SnapshotStore::create(&dir, metadata)?;
+        let store = SnapshotStore::create(&dir, metadata)?;
 
         let entry = ManifestEntry::new(
             "proc.system.uptime",
@@ -599,7 +632,7 @@ mod tests {
         let dir = unique_test_dir("close-partial");
         let metadata = test_metadata();
 
-        let mut store = SnapshotStore::create(&dir, metadata)?;
+        let store = SnapshotStore::create(&dir, metadata)?;
 
         store.record_object(ManifestEntry::new(
             "proc.system.uptime",
@@ -645,7 +678,7 @@ mod tests {
         let dir = unique_test_dir("finalize-twice");
         let metadata = test_metadata();
 
-        let mut store = SnapshotStore::create(&dir, metadata)?;
+        let store = SnapshotStore::create(&dir, metadata)?;
         store.finalize("10")?;
         let result = store.finalize("20");
         assert!(result.is_err());
@@ -660,7 +693,7 @@ mod tests {
         let dir = unique_test_dir("record-after-finalize");
         let metadata = test_metadata();
 
-        let mut store = SnapshotStore::create(&dir, metadata)?;
+        let store = SnapshotStore::create(&dir, metadata)?;
         store.finalize("10")?;
 
         let entry = ManifestEntry::new(
@@ -684,7 +717,7 @@ mod tests {
         let dir = unique_test_dir("multiple-entries");
         let metadata = test_metadata();
 
-        let mut store = SnapshotStore::create(&dir, metadata)?;
+        let store = SnapshotStore::create(&dir, metadata)?;
 
         for i in 0..5 {
             store.record_object(
@@ -745,6 +778,31 @@ mod tests {
         assert!(file_path.is_file());
         let contents = fs::read_to_string(&file_path).map_err(|e| StoreError::io("read", e))?;
         assert_eq!(contents, "cpu  0 0 0\n");
+
+        drop(store);
+        fs::remove_dir_all(&dir).map_err(|e| StoreError::io("cleanup", e))?;
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn write_raw_file_creates_private_nested_dirs() -> Result<(), StoreError> {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = unique_test_dir("raw-file-private-dirs");
+        let metadata = test_metadata();
+
+        let store = SnapshotStore::create(&dir, metadata)?;
+        store.write_raw_file("raw/proc/123/task/456/status", b"Name:\ttest\n")?;
+
+        for relative in ["raw/proc/123", "raw/proc/123/task", "raw/proc/123/task/456"] {
+            let mode = fs::metadata(dir.join(relative))
+                .map_err(|e| StoreError::io("metadata", e))?
+                .permissions()
+                .mode()
+                & 0o777;
+            assert_eq!(mode, 0o700, "{relative} should be 0700");
+        }
 
         drop(store);
         fs::remove_dir_all(&dir).map_err(|e| StoreError::io("cleanup", e))?;

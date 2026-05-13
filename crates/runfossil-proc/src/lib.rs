@@ -22,6 +22,8 @@ use runfossil_store::{
     StoreError, compute_sha256_hex,
 };
 
+const PROCESS_AUTO_LIMITED_FILES: &[&str] = &["smaps"];
+
 /// Returns the source slug owned by this collector crate.
 #[must_use]
 pub const fn source() -> SourceSlug {
@@ -36,7 +38,7 @@ pub const fn source() -> SourceSlug {
 ///
 /// On live hosts, this requires root permissions for most files. Non-root
 /// invocation will produce many `permission_denied` entries.
-pub fn collect_proc(store: &mut SnapshotStore) -> Result<(), StoreError> {
+pub fn collect_proc(store: &SnapshotStore) -> Result<(), StoreError> {
     collect_proc_globals_auto(store)?;
     collect_proc_net_auto(store)?;
     collect_p1_processes(store)?;
@@ -47,7 +49,7 @@ pub fn collect_proc(store: &mut SnapshotStore) -> Result<(), StoreError> {
     Ok(())
 }
 
-fn collect_proc_globals_auto(store: &mut SnapshotStore) -> Result<(), StoreError> {
+fn collect_proc_globals_auto(store: &SnapshotStore) -> Result<(), StoreError> {
     let proc_dir = Path::new("/proc");
     let config = AutoDiscoverConfig::proc_global();
     let limits = BoundedTraversalLimits::new(config.max_files_per_level, 0, config.timeout_ms);
@@ -166,7 +168,7 @@ fn collect_proc_globals_auto(store: &mut SnapshotStore) -> Result<(), StoreError
     Ok(())
 }
 
-fn collect_proc_net_auto(store: &mut SnapshotStore) -> Result<(), StoreError> {
+fn collect_proc_net_auto(store: &SnapshotStore) -> Result<(), StoreError> {
     let net_dir = Path::new("/proc/net");
     if !net_dir.exists() {
         return Ok(());
@@ -227,7 +229,7 @@ fn collect_proc_net_auto(store: &mut SnapshotStore) -> Result<(), StoreError> {
 }
 
 fn store_write_captured_file(
-    store: &mut SnapshotStore,
+    store: &SnapshotStore,
     source_path: &Path,
     source: SourceSlug,
     domain: &str,
@@ -255,9 +257,10 @@ fn store_write_captured_file(
             } else {
                 ManifestStatus::Captured
             };
+            let object_id = object_id_component(object_name);
 
             let mut entry = ManifestEntry::new(
-                format!("proc.{domain}.{object_name}"),
+                format!("proc.{domain}.{object_id}"),
                 source,
                 domain,
                 object_name,
@@ -278,7 +281,7 @@ fn store_write_captured_file(
         Err(error) => {
             let status = fs_error_to_manifest_status(&error);
             let entry = ManifestEntry::new(
-                format!("proc.{domain}.{object_name}"),
+                format!("proc.{domain}.{}", object_id_component(object_name)),
                 source,
                 domain,
                 object_name,
@@ -297,7 +300,7 @@ fn store_write_captured_file(
 /// Collects sysctl-like files from /proc/sys/kernel, /proc/sys/vm,
 /// /proc/sys/fs, /proc/sys/net, /proc/sys/user, /proc/sys/debug,
 /// /proc/sys/dev, and /proc/sys/abi.
-fn collect_proc_sys(store: &mut SnapshotStore) -> Result<(), StoreError> {
+fn collect_proc_sys(store: &SnapshotStore) -> Result<(), StoreError> {
     let limits = BoundedTraversalLimits::new(512, 3, 5000);
     let read_limits = BoundedReadLimits::new(65_536, 200);
 
@@ -339,7 +342,7 @@ struct SysWalkCtx<'a> {
 }
 
 fn walk_proc_sys_subdir(
-    store: &mut SnapshotStore,
+    store: &SnapshotStore,
     ctx: &SysWalkCtx<'_>,
     current: &Path,
     depth: u32,
@@ -422,7 +425,7 @@ fn walk_proc_sys_subdir(
 }
 
 /// Collects SysV IPC runtime state from /proc/sysvipc/{shm,msg,sem}.
-fn collect_proc_sysvipc(store: &mut SnapshotStore) -> Result<(), StoreError> {
+fn collect_proc_sysvipc(store: &SnapshotStore) -> Result<(), StoreError> {
     let root = Path::new("/proc/sysvipc");
     if !root.is_dir() {
         return Ok(());
@@ -495,7 +498,7 @@ fn collect_proc_sysvipc(store: &mut SnapshotStore) -> Result<(), StoreError> {
 }
 
 /// Collects interrupt counter files from /proc/irq/*/ bounded tree.
-fn collect_proc_irq(store: &mut SnapshotStore) -> Result<(), StoreError> {
+fn collect_proc_irq(store: &SnapshotStore) -> Result<(), StoreError> {
     let root = Path::new("/proc/irq");
     if !root.is_dir() {
         return Ok(());
@@ -556,7 +559,7 @@ fn collect_proc_irq(store: &mut SnapshotStore) -> Result<(), StoreError> {
 }
 
 /// Collects per-filesystem runtime state from /proc/fs/* bounded tree.
-fn collect_proc_fs(store: &mut SnapshotStore) -> Result<(), StoreError> {
+fn collect_proc_fs(store: &SnapshotStore) -> Result<(), StoreError> {
     let root = Path::new("/proc/fs");
     if !root.is_dir() {
         return Ok(());
@@ -589,7 +592,7 @@ fn collect_proc_fs(store: &mut SnapshotStore) -> Result<(), StoreError> {
 }
 
 fn collect_proc_fs_subdir(
-    store: &mut SnapshotStore,
+    store: &SnapshotStore,
     dir: &Path,
     id_prefix: &str,
     read_limits: BoundedReadLimits,
@@ -625,7 +628,7 @@ fn collect_proc_fs_subdir(
 }
 
 fn collect_proc_fs_file(
-    store: &mut SnapshotStore,
+    store: &SnapshotStore,
     source_path: &Path,
     domain: &str,
     name: &str,
@@ -678,7 +681,7 @@ fn collect_proc_fs_file(
 ///
 /// Includes cgroup version detection, pstore capture, power state,
 /// network class devices, and block device attributes.
-pub fn collect_sys(store: &mut SnapshotStore) -> Result<(), StoreError> {
+pub fn collect_sys(store: &SnapshotStore) -> Result<(), StoreError> {
     sys::collect_sys(store)
 }
 
@@ -687,7 +690,7 @@ pub fn collect_sys(store: &mut SnapshotStore) -> Result<(), StoreError> {
 /// Device nodes are metadata-only. Symlink directories (/dev/block,
 /// /dev/disk, /dev/mapper) record target paths. Pseudo-devices and
 /// loop devices are recorded as metadata.
-pub fn collect_dev(store: &mut SnapshotStore) -> Result<(), StoreError> {
+pub fn collect_dev(store: &SnapshotStore) -> Result<(), StoreError> {
     dev::collect_dev(store)
 }
 
@@ -696,22 +699,22 @@ pub fn collect_dev(store: &mut SnapshotStore) -> Result<(), StoreError> {
 /// Reads up to 2 MiB from the kernel message buffer and writes it to
 /// `raw/kernel/kmsg.window`. Records `not_found` if `/dev/kmsg` is
 /// absent.
-pub fn collect_kmsg(store: &mut SnapshotStore) -> Result<(), StoreError> {
+pub fn collect_kmsg(store: &SnapshotStore) -> Result<(), StoreError> {
     kmsg::collect_kmsg(store)
 }
 
 /// Collects security subsystem state (SELinux, AppArmor, LSM info).
-pub fn collect_security(store: &mut SnapshotStore) -> Result<(), StoreError> {
+pub fn collect_security(store: &SnapshotStore) -> Result<(), StoreError> {
     security::collect_security(store)
 }
 
 /// Collects scheduler state (systemd timers, cron, at jobs).
-pub fn collect_scheduler(store: &mut SnapshotStore) -> Result<(), StoreError> {
+pub fn collect_scheduler(store: &SnapshotStore) -> Result<(), StoreError> {
     scheduler::collect_scheduler(store)
 }
 
 /// Collects crash dump state (kdump, core_pattern, coredump dir).
-pub fn collect_crash(store: &mut SnapshotStore) -> Result<(), StoreError> {
+pub fn collect_crash(store: &SnapshotStore) -> Result<(), StoreError> {
     crash::collect_crash(store)
 }
 
@@ -719,7 +722,7 @@ pub fn collect_crash(store: &mut SnapshotStore) -> Result<(), StoreError> {
 ///
 /// Includes systemd state, user runtime directories, lock files, pid files,
 /// udev data, and dbus state.
-pub fn collect_run(store: &mut SnapshotStore) -> Result<(), StoreError> {
+pub fn collect_run(store: &SnapshotStore) -> Result<(), StoreError> {
     run::collect_run(store)
 }
 
@@ -735,7 +738,35 @@ pub(crate) fn output_path(source_path: &Path) -> PathBuf {
     Path::new("raw").join(stripped)
 }
 
-fn collect_p1_processes(store: &mut SnapshotStore) -> Result<(), StoreError> {
+fn object_id_component(value: &str) -> String {
+    let mut output = String::with_capacity(value.len());
+    for byte in value.bytes() {
+        match byte {
+            b'a'..=b'z' | b'0'..=b'9' => output.push(byte as char),
+            b'A'..=b'Z' => output.push((byte + 32) as char),
+            b'.' => {
+                if !output.is_empty() && !output.ends_with('.') {
+                    output.push('.');
+                }
+            }
+            _ => {
+                if !output.is_empty() && !output.ends_with('.') {
+                    output.push('.');
+                }
+            }
+        }
+    }
+    if output.ends_with('.') {
+        output.pop();
+    }
+    if output.is_empty() {
+        "object".to_string()
+    } else {
+        output
+    }
+}
+
+fn collect_p1_processes(store: &SnapshotStore) -> Result<(), StoreError> {
     let proc_dir = Path::new("/proc");
     let limits = BoundedTraversalLimits::process_listing();
 
@@ -759,21 +790,19 @@ fn collect_p1_processes(store: &mut SnapshotStore) -> Result<(), StoreError> {
     let fds_limits = BoundedTraversalLimits::new(1024, 1, 200);
     let ns_limits = BoundedTraversalLimits::new(32, 1, 100);
     let per_process_config = AutoDiscoverConfig::proc_per_process();
-    let max_pids = 1024u32;
+    let max_pids = 1024usize;
 
-    for entry in &listing.entries {
-        if !entry.is_dir {
-            continue;
-        }
-        let pid: u32 = match entry.name.parse() {
-            Ok(pid) => pid,
-            Err(_) => continue,
-        };
-        if pid > max_pids {
-            continue;
-        }
+    let mut pids = listing
+        .entries
+        .iter()
+        .filter(|entry| entry.is_dir)
+        .filter_map(|entry| entry.name.parse::<u32>().ok())
+        .collect::<Vec<_>>();
+    pids.sort_unstable();
 
+    for pid in pids.into_iter().take(max_pids) {
         collect_process_files_auto(store, pid, &per_process_config)?;
+        collect_process_security_context(store, pid)?;
         collect_process_fds(store, pid, fds_limits)?;
         collect_process_ns(store, pid, ns_limits)?;
         collect_process_fdinfo(store, pid, fds_limits)?;
@@ -784,7 +813,7 @@ fn collect_p1_processes(store: &mut SnapshotStore) -> Result<(), StoreError> {
 }
 
 fn collect_process_files_auto(
-    store: &mut SnapshotStore,
+    store: &SnapshotStore,
     pid: u32,
     config: &AutoDiscoverConfig,
 ) -> Result<(), StoreError> {
@@ -798,6 +827,10 @@ fn collect_process_files_auto(
     };
 
     for entry in &listing.entries {
+        if is_process_auto_limited(&entry.name) {
+            continue;
+        }
+
         if config.is_blacklisted(&entry.name) {
             continue;
         }
@@ -901,8 +934,70 @@ fn collect_process_files_auto(
     Ok(())
 }
 
+fn is_process_auto_limited(name: &str) -> bool {
+    PROCESS_AUTO_LIMITED_FILES.contains(&name)
+}
+
+fn collect_process_security_context(store: &SnapshotStore, pid: u32) -> Result<(), StoreError> {
+    let source_path = Path::new("/proc")
+        .join(pid.to_string())
+        .join("attr")
+        .join("current");
+
+    if !source_path.exists() {
+        return Ok(());
+    }
+
+    let limits = BoundedReadLimits::new(4_096, 100);
+
+    match read_file_bounded(&source_path, limits) {
+        Ok(result) => {
+            let out_path = output_path(&source_path);
+            let bytes = result.content.len() as u64;
+            store.write_raw_file(&out_path, &result.content)?;
+
+            let status = if result.was_truncated {
+                ManifestStatus::Truncated
+            } else {
+                ManifestStatus::Captured
+            };
+
+            let entry = ManifestEntry::new(
+                format!("proc.process.{pid}.attr.current"),
+                SourceSlug::Proc,
+                "process_security",
+                format!("{pid}/attr/current"),
+                ObjectKind::File,
+                status,
+            )
+            .with_path(out_path.to_string_lossy())
+            .with_bytes(bytes)
+            .with_limits(ObjectLimits::new(limits.max_bytes, limits.timeout_ms, 1, 0));
+
+            store.record_object(entry)?;
+        }
+        Err(error) => {
+            let status = fs_error_to_manifest_status(&error);
+            let entry = ManifestEntry::new(
+                format!("proc.process.{pid}.attr.current"),
+                SourceSlug::Proc,
+                "process_security",
+                format!("{pid}/attr/current"),
+                ObjectKind::File,
+                status,
+            )
+            .with_reason(error.to_string())
+            .with_limits(ObjectLimits::new(limits.max_bytes, limits.timeout_ms, 1, 0));
+
+            store.record_object(entry)?;
+        }
+    }
+
+    Ok(())
+}
+
 fn collect_process_fds(
-    store: &mut SnapshotStore,
+    store: &SnapshotStore,
     pid: u32,
     limits: BoundedTraversalLimits,
 ) -> Result<(), StoreError> {
@@ -980,7 +1075,7 @@ fn collect_process_fds(
 }
 
 fn collect_process_ns(
-    store: &mut SnapshotStore,
+    store: &SnapshotStore,
     pid: u32,
     limits: BoundedTraversalLimits,
 ) -> Result<(), StoreError> {
@@ -1058,7 +1153,7 @@ fn collect_process_ns(
 }
 
 fn collect_process_fdinfo(
-    store: &mut SnapshotStore,
+    store: &SnapshotStore,
     pid: u32,
     limits: BoundedTraversalLimits,
 ) -> Result<(), StoreError> {
@@ -1178,7 +1273,7 @@ fn collect_process_fdinfo(
     Ok(())
 }
 
-fn collect_process_threads(store: &mut SnapshotStore, pid: u32) -> Result<(), StoreError> {
+fn collect_process_threads(store: &SnapshotStore, pid: u32) -> Result<(), StoreError> {
     let task_dir = Path::new("/proc").join(pid.to_string()).join("task");
     let limits = BoundedTraversalLimits::new(64, 1, 200);
 
@@ -1355,6 +1450,15 @@ mod tests {
     }
 
     #[test]
+    fn object_id_component_replaces_path_separators() {
+        assert_eq!(object_id_component("rpc/auth.unix.ip"), "rpc.auth.unix.ip");
+        assert_eq!(
+            object_id_component("default_smp_affinity"),
+            "default.smp.affinity"
+        );
+    }
+
+    #[test]
     fn output_path_preserves_relative_paths() {
         assert_eq!(
             output_path(Path::new("relative.txt")),
@@ -1445,8 +1549,14 @@ mod tests {
         let config = AutoDiscoverConfig::proc_per_process();
         assert!(config.is_blacklisted("mem"));
         assert!(config.is_blacklisted("pagemap"));
+        assert!(config.is_blacklisted("attr"));
+        assert!(!config.is_blacklisted("attr/current"));
+        assert!(config.is_blacklisted("smaps"));
+        assert!(!config.is_blacklisted("smaps_rollup"));
         assert!(!config.is_blacklisted("status"));
         assert!(!config.is_blacklisted("cmdline"));
+        assert!(config.is_blacklisted("maps"));
+        assert!(config.is_blacklisted("numa_maps"));
     }
 
     #[test]
@@ -1457,14 +1567,16 @@ mod tests {
         assert!(config.is_blacklisted("clear_refs"));
         assert!(!config.is_blacklisted("status"));
         assert!(!config.is_blacklisted("cmdline"));
+        assert!(is_process_auto_limited("smaps"));
+        assert!(!is_process_auto_limited("smaps_rollup"));
     }
 
     #[test]
     #[ignore = "manual live-host smoke test; touches /sys pseudo-filesystems"]
     fn sys_collector_live_host_smoke() -> Result<(), Box<dyn std::error::Error>> {
         let d = dir()?;
-        let mut store = new_store(&d)?;
-        let result = collect_sys(&mut store);
+        let store = new_store(&d)?;
+        let result = collect_sys(&store);
         if let Err(e) = result.as_ref() {
             assert!(
                 e.to_string().contains("Io") || e.to_string().contains("not found"),
@@ -1478,8 +1590,8 @@ mod tests {
     #[ignore = "manual live-host smoke test; touches /dev pseudo-filesystems"]
     fn dev_collector_live_host_smoke() -> Result<(), Box<dyn std::error::Error>> {
         let d = dir()?;
-        let mut store = new_store(&d)?;
-        let result = collect_dev(&mut store);
+        let store = new_store(&d)?;
+        let result = collect_dev(&store);
         if let Err(e) = result.as_ref() {
             assert!(e.to_string().contains("Io"), "unexpected error: {e}");
         }
@@ -1490,8 +1602,8 @@ mod tests {
     #[ignore = "manual live-host smoke test; touches /run pseudo-filesystems"]
     fn run_collector_live_host_smoke() -> Result<(), Box<dyn std::error::Error>> {
         let d = dir()?;
-        let mut store = new_store(&d)?;
-        let result = collect_run(&mut store);
+        let store = new_store(&d)?;
+        let result = collect_run(&store);
         assert!(
             result.is_ok(),
             "run collector should return Ok even when /run dirs are absent"
@@ -1514,8 +1626,8 @@ mod tests {
     #[ignore = "manual live-host smoke test; touches security pseudo-filesystems"]
     fn security_collector_live_host_smoke() -> Result<(), Box<dyn std::error::Error>> {
         let d = dir()?;
-        let mut store = new_store(&d)?;
-        let result = collect_security(&mut store);
+        let store = new_store(&d)?;
+        let result = collect_security(&store);
         assert!(
             result.is_ok(),
             "security collector should return Ok even when source dirs are absent"
@@ -1527,8 +1639,8 @@ mod tests {
     #[ignore = "manual live-host smoke test; touches scheduler state directories"]
     fn scheduler_collector_live_host_smoke() -> Result<(), Box<dyn std::error::Error>> {
         let d = dir()?;
-        let mut store = new_store(&d)?;
-        let result = collect_scheduler(&mut store);
+        let store = new_store(&d)?;
+        let result = collect_scheduler(&store);
         assert!(
             result.is_ok(),
             "scheduler collector should return Ok even when source dirs are absent"
@@ -1540,8 +1652,8 @@ mod tests {
     #[ignore = "manual live-host smoke test; touches crash dump state directories"]
     fn crash_collector_live_host_smoke() -> Result<(), Box<dyn std::error::Error>> {
         let d = dir()?;
-        let mut store = new_store(&d)?;
-        let result = collect_crash(&mut store);
+        let store = new_store(&d)?;
+        let result = collect_crash(&store);
         assert!(
             result.is_ok(),
             "crash collector should return Ok even when source dirs are absent"

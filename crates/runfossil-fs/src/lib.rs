@@ -363,11 +363,11 @@ impl AutoDiscoverConfig {
     }
 
     /// Config for /proc/<pid> per-process: single level, all files except
-    /// dangerous/unbounded entries. Memory-mapping files (smaps, maps,
-    /// numa_maps, smaps_rollup) are excluded from auto-discovery because
-    /// their cumulative size on hosts with many processes can exceed the
-    /// capture byte budget; they remain tracked as coverage units for
-    /// planned explicit collection.
+    /// dangerous/unbounded entries. smaps, maps, and numa_maps are excluded
+    /// from auto-discovery because their cumulative size on hosts with many
+    /// processes can exceed the capture byte budget; they remain tracked as
+    /// coverage units for planned explicit collection. smaps_rollup (~5 KB
+    /// aggregate) is retained as auto-discover P2.
     #[must_use]
     pub const fn proc_per_process() -> Self {
         Self {
@@ -384,7 +384,6 @@ impl AutoDiscoverConfig {
                 "setgroups",
                 "reclaim",
                 "smaps",
-                "smaps_rollup",
                 "maps",
                 "numa_maps",
             ],
@@ -397,14 +396,12 @@ impl AutoDiscoverConfig {
         }
     }
 
-    /// Config for /sys device class directories: bounded recursion, exclude
-    /// write interfaces.
+    /// Config for /sys device class directories: bounded recursion, excluding
+    /// control entries that are known to mutate kernel or device state.
     #[must_use]
     pub const fn sys_device_class() -> Self {
         Self {
-            blacklist: &[
-                "uevent", "bind", "unbind", "probe", "reset", "trigger", "store", "config",
-            ],
+            blacklist: &["bind", "unbind", "probe", "reset", "trigger", "store"],
             max_bytes_per_file: 1_048_576,
             max_files_per_level: 256,
             max_depth: 4,
@@ -415,7 +412,8 @@ impl AutoDiscoverConfig {
     }
 
     /// Config for /run directories: bounded recursion, cautious depth.
-    /// Excludes application-layer container engine sockets per coverage matrix.
+    /// Excludes container runtime API paths from content traversal; collectors
+    /// may still record their presence as metadata-only evidence.
     #[must_use]
     pub const fn run_dir() -> Self {
         Self {
@@ -454,9 +452,7 @@ impl AutoDiscoverConfig {
     /// Returns whether an entry name is blacklisted.
     #[must_use]
     pub fn is_blacklisted(&self, name: &str) -> bool {
-        self.blacklist
-            .iter()
-            .any(|b| name == *b || name.starts_with(&format!("{b}/")))
+        self.blacklist.contains(&name)
     }
 }
 

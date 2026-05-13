@@ -30,7 +30,7 @@ const SECURITY_FILES: &[(&str, &str, &str, &str)] = &[
     ),
 ];
 
-pub(crate) fn collect_security(store: &mut SnapshotStore) -> Result<(), StoreError> {
+pub(crate) fn collect_security(store: &SnapshotStore) -> Result<(), StoreError> {
     // Auto-discover security directory trees
     let traversal_limits = BoundedTraversalLimits::new(64, 2, 5000);
     let read_limits = BoundedReadLimits::new(256 * 1024, 5000);
@@ -90,7 +90,7 @@ pub(crate) fn collect_security(store: &mut SnapshotStore) -> Result<(), StoreErr
 }
 
 fn walk_security_tree(
-    store: &mut SnapshotStore,
+    store: &SnapshotStore,
     base: &Path,
     root: &Path,
     domain: &str,

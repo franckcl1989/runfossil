@@ -63,7 +63,7 @@ policy, or the design baseline.
 The storage or collection method assigned to a coverage unit. Baseline modes
 include `raw-file`, `raw-file-set`, `dir-listing`, `symlink-targets`,
 `metadata`, `bounded-tree`, `bounded-window`, `native-protocol`,
-`native-netlink`, `native-socket`, `metadata-only`, and `skip`.
+`native-netlink`, `metadata-only`, and `skip`.
 
 ### Copilot Instructions
 
@@ -80,6 +80,13 @@ planning, storage, filesystem helpers, and source-specific collectors.
 
 The act of collecting live Linux runtime evidence from the current host.
 `runfossil capture` is root-only.
+
+### Capture Objective
+
+The project target for `runfossil capture`: preserve a complete, comprehensive,
+and effective raw snapshot of in-scope Linux operating-system runtime evidence
+for offline incident reconstruction, without exceeding the configured
+collection budget.
 
 ### Snapshot
 
@@ -124,12 +131,12 @@ entries.
 ### Source
 
 The L1 root collection source in the taxonomy, such as `/proc`, `/sys`, netlink,
-kernel ring buffer, service manager, or container runtime.
+kernel ring buffer, or service manager.
 
 ### Source Slug
 
 The stable lowercase identifier for an L1 source family in snapshot control
-files, such as `proc`, `sys`, `netlink`, `kernel`, or `container`.
+files, such as `proc`, `sys`, `netlink`, `kernel`, or `service`.
 
 ### Workspace
 
@@ -179,6 +186,15 @@ in progress.
 A snapshot directory without `CAPTURE_COMPLETE`, or one whose manifest indicates
 incomplete capture. Partial snapshots remain valid evidence.
 
+### Snapshot Completeness
+
+The accountable state of a snapshot, not a promise that every possible runtime
+byte was copied. A complete capture records final metadata and accounts for
+in-scope evidence through outcomes such as `captured`, `limited`,
+`skipped_by_policy`, `unsupported`, `not_present`, `not_found`, `timeout`,
+`size_limited`, `truncated`, `io_error`, or related manifest and planner
+outcomes.
+
 ### Root-Only Capture
 
 The policy that live capture requires effective UID zero. Offline commands such
@@ -208,8 +224,8 @@ maximum depth, selected objects, event-window size, or metadata-only mode.
 
 ### Event Window
 
-A bounded slice of runtime events from kernel, system log, service, audit,
-security, or container sources.
+A bounded slice of runtime events from kernel, system log, service, audit, or
+security sources.
 
 ### Executor
 
@@ -223,16 +239,16 @@ further work under pressure.
 A low-cost fact-gathering operation executed during the planner's probe phase.
 Examples include reading the effective UID, hostname, kernel release, PSI
 pressure files, detecting cgroup version, counting processes and mounts, and
-checking for container runtime sockets. Probes must be bounded and must not
+checking for container daemon sockets. Probes must be bounded and must not
 deeply traverse dynamic trees.
 
 ### Incident Signal
 
 A runtime indicator detected during planning or execution that justifies deeper
 collection in a specific source family. Examples include OOM messages, hung-task
-reports, filesystem errors, device resets, service failures, and container crash
-indicators. Incident signals deepen the relevant source family without switching
-the entire capture into a heavy mode.
+reports, filesystem errors, device resets, service failures, and
+container-related crash indicators. Incident signals deepen the relevant source
+family without switching the entire capture into a heavy mode.
 
 ### Metadata-Only
 
@@ -287,7 +303,7 @@ Partial content was intentionally written within policy limits.
 
 The object existed during discovery but disappeared before or during capture.
 This is normal for runtime state such as processes, file descriptors, sockets,
-cgroups, and containers.
+cgroups, and container-related host objects.
 
 ### Incident-Time Path
 

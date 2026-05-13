@@ -74,7 +74,7 @@ impl fmt::Debug for CancelToken {
     }
 }
 
-pub(crate) type CollectorFn = fn(&mut runfossil_store::SnapshotStore) -> Result<(), StoreError>;
+pub(crate) type CollectorFn = fn(&runfossil_store::SnapshotStore) -> Result<(), StoreError>;
 
 #[derive(Clone)]
 pub(crate) struct CaptureTask {
@@ -130,7 +130,7 @@ impl std::error::Error for ExecutorError {
 /// prevent other tasks from running. The global timeout and byte budget act
 /// as additional safety valves.
 pub(crate) fn run_capture_tasks(
-    store: Arc<Mutex<runfossil_store::SnapshotStore>>,
+    store: Arc<runfossil_store::SnapshotStore>,
     tasks: Vec<CaptureTask>,
     budget: &CaptureBudget,
     cancel: CancelToken,
@@ -156,28 +156,19 @@ pub(crate) fn run_capture_tasks(
         }
 
         if capture_start.elapsed() > budget.global_timeout {
+            cancel.cancel();
             join_remaining(&mut all_handles);
             return Err(ExecutorError::GlobalTimeout);
         }
 
-        {
-            let Ok(store_guard) = store.lock() else {
-                join_remaining(&mut all_handles);
-                return Err(ExecutorError::TaskFailed {
-                    name: "capture",
-                    source: StoreError::io(
-                        "check byte budget",
-                        std::io::Error::other("store mutex poisoned"),
-                    ),
-                });
-            };
-            if store_guard.total_bytes_written() >= budget.max_total_bytes {
-                join_remaining(&mut all_handles);
-                return Err(ExecutorError::ByteBudgetExceeded {
-                    bytes_written: store_guard.total_bytes_written(),
-                    max_bytes: budget.max_total_bytes,
-                });
-            }
+        let bytes_written = store.total_bytes_written();
+        if bytes_written >= budget.max_total_bytes {
+            cancel.cancel();
+            join_remaining(&mut all_handles);
+            return Err(ExecutorError::ByteBudgetExceeded {
+                bytes_written,
+                max_bytes: budget.max_total_bytes,
+            });
         }
 
         let start = batch_idx * batch_size;
@@ -226,15 +217,7 @@ pub(crate) fn run_capture_tasks(
                         return;
                     }
 
-                    let result = match store.lock() {
-                        Ok(mut store_guard) => (task.collector)(&mut store_guard),
-                        Err(_) => {
-                            let _ = tx.send(Err(format!(
-                                "collector '{task_name}': store mutex poisoned"
-                            )));
-                            return;
-                        }
-                    };
+                    let result = (task.collector)(&store);
 
                     match result {
                         Ok(()) => {
@@ -271,6 +254,7 @@ pub(crate) fn run_capture_tasks(
 
             if capture_start.elapsed() > budget.global_timeout {
                 drop(rx);
+                cancel.cancel();
                 if let Ok(mut err) = first_error.lock()
                     && err.is_none()
                 {
@@ -294,6 +278,7 @@ pub(crate) fn run_capture_tasks(
                 }
                 Err(mpsc::RecvTimeoutError::Timeout) => {
                     drop(rx);
+                    cancel.cancel();
                     if let Ok(mut err) = first_error.lock()
                         && err.is_none()
                     {
@@ -316,7 +301,7 @@ pub(crate) fn run_capture_tasks(
             };
 
             let join_limit = if timed_out {
-                Duration::from_secs(5)
+                Duration::from_millis(100)
             } else {
                 Duration::from_secs(2)
             };
@@ -324,12 +309,11 @@ pub(crate) fn run_capture_tasks(
             while !handle.is_finished() && Instant::now() < join_deadline {
                 std::thread::sleep(Duration::from_millis(100));
             }
-            all_handles.push(handle);
-        }
-
-        if cancel.is_cancelled() {
-            join_remaining(&mut all_handles);
-            return Err(ExecutorError::Cancelled);
+            if handle.is_finished() {
+                let _ = handle.join();
+            } else {
+                all_handles.push(handle);
+            }
         }
 
         if let Ok(guard) = first_error.lock() {
@@ -345,6 +329,11 @@ pub(crate) fn run_capture_tasks(
                     std::io::Error::other("error mutex poisoned"),
                 ),
             });
+        }
+
+        if cancel.is_cancelled() {
+            join_remaining(&mut all_handles);
+            return Err(ExecutorError::Cancelled);
         }
     }
 
@@ -371,10 +360,13 @@ pub(crate) fn run_capture_tasks(
 }
 
 fn join_remaining(handles: &mut Vec<std::thread::JoinHandle<()>>) {
-    let deadline = Instant::now() + Duration::from_secs(3);
+    let deadline = Instant::now() + Duration::from_millis(250);
     for handle in handles.drain(..) {
         while !handle.is_finished() && Instant::now() < deadline {
             std::thread::sleep(Duration::from_millis(50));
+        }
+        if handle.is_finished() {
+            let _ = handle.join();
         }
     }
 }
@@ -388,9 +380,14 @@ mod tests {
     use super::*;
 
     fn create_test_store() -> SnapshotStore {
-        let dir =
-            tempfile::TempDir::with_prefix("runfossil-executor-test").expect("create temp dir");
-        let snapshot_dir = dir.path().join("snapshot");
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system clock after epoch")
+            .as_nanos();
+        let snapshot_dir = std::env::temp_dir().join(format!(
+            "runfossil-executor-test-{}-{unique}",
+            std::process::id()
+        ));
         let metadata = SnapshotMetadata {
             tool_version: "0.0.0".to_string(),
             started_at_unix_ns: "0".to_string(),
@@ -405,15 +402,20 @@ mod tests {
         SnapshotStore::create(&snapshot_dir, metadata).expect("create test store")
     }
 
-    fn noop_collector(_store: &mut SnapshotStore) -> Result<(), StoreError> {
+    fn noop_collector(_store: &SnapshotStore) -> Result<(), StoreError> {
         Ok(())
     }
 
-    fn failing_collector(_store: &mut SnapshotStore) -> Result<(), StoreError> {
+    fn failing_collector(_store: &SnapshotStore) -> Result<(), StoreError> {
         Err(StoreError::io(
             "test failure",
             std::io::Error::other("test"),
         ))
+    }
+
+    fn slow_collector(_store: &SnapshotStore) -> Result<(), StoreError> {
+        std::thread::sleep(Duration::from_secs(2));
+        Ok(())
     }
 
     #[test]
@@ -421,7 +423,7 @@ mod tests {
         let store = create_test_store();
         let cancel = CancelToken::new();
         let budget = CaptureBudget::default();
-        let store = Arc::new(std::sync::Mutex::new(store));
+        let store = Arc::new(store);
         let result = run_capture_tasks(store, vec![], &budget, cancel, false);
         assert!(result.is_ok());
     }
@@ -431,7 +433,7 @@ mod tests {
         let store = create_test_store();
         let cancel = CancelToken::new();
         let budget = CaptureBudget::default();
-        let store = Arc::new(std::sync::Mutex::new(store));
+        let store = Arc::new(store);
         let tasks = vec![CaptureTask {
             name: "test",
             collector: noop_collector,
@@ -446,7 +448,7 @@ mod tests {
         let store = create_test_store();
         let cancel = CancelToken::new();
         let budget = CaptureBudget::default();
-        let store = Arc::new(std::sync::Mutex::new(store));
+        let store = Arc::new(store);
         let tasks = vec![CaptureTask {
             name: "failing",
             collector: failing_collector,
@@ -462,7 +464,7 @@ mod tests {
         let cancel = CancelToken::new();
         cancel.cancel();
         let budget = CaptureBudget::default();
-        let store = Arc::new(std::sync::Mutex::new(store));
+        let store = Arc::new(store);
         let tasks = vec![CaptureTask {
             name: "test",
             collector: noop_collector,
@@ -497,7 +499,7 @@ mod tests {
         let store = create_test_store();
         let cancel = CancelToken::new();
         let budget = CaptureBudget::default();
-        let store = Arc::new(std::sync::Mutex::new(store));
+        let store = Arc::new(store);
         let tasks: Vec<_> = (0..10)
             .map(|i| CaptureTask {
                 name: "task",
@@ -507,5 +509,31 @@ mod tests {
             .collect();
         let result = run_capture_tasks(store, tasks, &budget, cancel, false);
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn executor_timeout_does_not_block_partial_close() {
+        let store = Arc::new(create_test_store());
+        let cancel = CancelToken::new();
+        let budget = CaptureBudget {
+            max_concurrency: NonZeroUsize::MIN,
+            global_timeout: Duration::from_secs(5),
+            max_total_bytes: 512 * 1024 * 1024,
+            per_task_timeout: Duration::from_millis(10),
+        };
+        let tasks = vec![CaptureTask {
+            name: "slow",
+            collector: slow_collector,
+            priority: 0,
+        }];
+
+        let start = Instant::now();
+        let result = run_capture_tasks(Arc::clone(&store), tasks, &budget, cancel, true);
+        assert!(matches!(result, Err(ExecutorError::TaskFailed { .. })));
+        store.close_partial("1").expect("close partial");
+        assert!(
+            start.elapsed() < Duration::from_secs(1),
+            "timeout and partial close should not wait for the slow collector"
+        );
     }
 }

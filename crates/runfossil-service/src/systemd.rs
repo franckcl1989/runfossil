@@ -24,7 +24,7 @@ pub(crate) fn detect_systemd() -> bool {
 /// between raw dump and unit-details parsing) then collects manager state,
 /// unit details, and failed-unit list.
 pub(crate) fn collect_systemd_state(
-    store: &mut SnapshotStore,
+    store: &SnapshotStore,
     stream: &mut UnixStream,
 ) -> Result<(), StoreError> {
     let units_body = collect_list_units_and_dump(store, stream)?;
@@ -35,7 +35,7 @@ pub(crate) fn collect_systemd_state(
 }
 
 fn collect_list_units_and_dump(
-    store: &mut SnapshotStore,
+    store: &SnapshotStore,
     stream: &mut UnixStream,
 ) -> Result<Option<Vec<u8>>, StoreError> {
     let dest = "org.freedesktop.systemd1";
@@ -88,10 +88,7 @@ fn collect_list_units_and_dump(
     }
 }
 
-fn collect_manager_state(
-    store: &mut SnapshotStore,
-    stream: &mut UnixStream,
-) -> Result<(), StoreError> {
+fn collect_manager_state(store: &SnapshotStore, stream: &mut UnixStream) -> Result<(), StoreError> {
     let dest = "org.freedesktop.systemd1";
     let path = "/org/freedesktop/systemd1";
     let props_iface = "org.freedesktop.DBus.Properties";
@@ -149,7 +146,7 @@ fn collect_manager_state(
 }
 
 fn collect_unit_details(
-    store: &mut SnapshotStore,
+    store: &SnapshotStore,
     stream: &mut UnixStream,
     units_body: Option<Vec<u8>>,
 ) -> Result<(), StoreError> {
@@ -209,10 +206,7 @@ fn collect_unit_details(
     Ok(())
 }
 
-fn collect_failed_state(
-    store: &mut SnapshotStore,
-    stream: &mut UnixStream,
-) -> Result<(), StoreError> {
+fn collect_failed_state(store: &SnapshotStore, stream: &mut UnixStream) -> Result<(), StoreError> {
     let dest = "org.freedesktop.systemd1";
     let path = "/org/freedesktop/systemd1";
     let iface = "org.freedesktop.systemd1.Manager";

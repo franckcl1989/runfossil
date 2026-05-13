@@ -43,7 +43,7 @@ pub const fn source() -> SourceSlug {
 /// conditional extended families. Core families (P0-P2) are always attempted
 /// on NETLINK_ROUTE. Extended families (P3) open their own protocol sockets
 /// and report unsupported when the kernel does not provide the family.
-pub fn collect_netlink(store: &mut SnapshotStore) -> Result<(), StoreError> {
+pub fn collect_netlink(store: &SnapshotStore) -> Result<(), StoreError> {
     let pid = process::id();
 
     collect_route_families(store, pid)?;
@@ -52,11 +52,7 @@ pub fn collect_netlink(store: &mut SnapshotStore) -> Result<(), StoreError> {
     Ok(())
 }
 
-fn record_unsupported(
-    store: &mut SnapshotStore,
-    family: &str,
-    reason: &str,
-) -> Result<(), StoreError> {
+fn record_unsupported(store: &SnapshotStore, family: &str, reason: &str) -> Result<(), StoreError> {
     store.record_object(
         ManifestEntry::new(
             format!("netlink.{family}.dump"),
@@ -71,11 +67,7 @@ fn record_unsupported(
     )
 }
 
-fn record_io_error(
-    store: &mut SnapshotStore,
-    family: &str,
-    reason: &str,
-) -> Result<(), StoreError> {
+fn record_io_error(store: &SnapshotStore, family: &str, reason: &str) -> Result<(), StoreError> {
     store.record_object(
         ManifestEntry::new(
             format!("netlink.{family}.dump"),
@@ -90,7 +82,7 @@ fn record_io_error(
     )
 }
 
-fn collect_route_families(store: &mut SnapshotStore, pid: u32) -> Result<(), StoreError> {
+fn collect_route_families(store: &SnapshotStore, pid: u32) -> Result<(), StoreError> {
     let families = [
         ("link", RTM_GETLINK, 16usize),
         ("addr", RTM_GETADDR, 8),
@@ -118,7 +110,7 @@ fn collect_route_families(store: &mut SnapshotStore, pid: u32) -> Result<(), Sto
 }
 
 fn dump_family_set(
-    store: &mut SnapshotStore,
+    store: &SnapshotStore,
     mut sock: Socket,
     families: &[(&str, u16, usize)],
     pid: u32,
@@ -151,7 +143,7 @@ fn dump_family_set(
     Ok(())
 }
 
-fn collect_extended_families(store: &mut SnapshotStore, pid: u32) -> Result<(), StoreError> {
+fn collect_extended_families(store: &SnapshotStore, pid: u32) -> Result<(), StoreError> {
     try_sockdiag(store, pid)?;
     try_conntrack(store, pid)?;
     try_xfrm(store, pid)?;
@@ -160,7 +152,7 @@ fn collect_extended_families(store: &mut SnapshotStore, pid: u32) -> Result<(), 
 
 // ── SOCK_DIAG (NETLINK_SOCK_DIAG) ─────────────────────────────────────────
 
-fn try_sockdiag(store: &mut SnapshotStore, pid: u32) -> Result<(), StoreError> {
+fn try_sockdiag(store: &SnapshotStore, pid: u32) -> Result<(), StoreError> {
     let mut sock = match open_netlink_socket(NETLINK_SOCK_DIAG) {
         Ok(s) => s,
         Err(error) => {
@@ -238,7 +230,7 @@ fn sockdiag_dump(sock: &mut Socket, pid: u32) -> io::Result<Vec<u8>> {
 
 // ── CONNTRACK (NETLINK_NETFILTER) ─────────────────────────────────────────
 
-fn try_conntrack(store: &mut SnapshotStore, pid: u32) -> Result<(), StoreError> {
+fn try_conntrack(store: &SnapshotStore, pid: u32) -> Result<(), StoreError> {
     let mut sock = match open_netlink_socket(NETLINK_NETFILTER) {
         Ok(s) => s,
         Err(error) => {
@@ -314,7 +306,7 @@ fn conntrack_dump(sock: &mut Socket, pid: u32) -> io::Result<Vec<u8>> {
 
 // ── XFRM (NETLINK_XFRM) ───────────────────────────────────────────────────
 
-fn try_xfrm(store: &mut SnapshotStore, pid: u32) -> Result<(), StoreError> {
+fn try_xfrm(store: &SnapshotStore, pid: u32) -> Result<(), StoreError> {
     let mut sock = match open_netlink_socket(NETLINK_XFRM) {
         Ok(s) => s,
         Err(error) => {

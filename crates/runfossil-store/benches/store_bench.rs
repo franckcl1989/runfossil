@@ -59,7 +59,7 @@ fn bench_store_record_and_finalize(c: &mut Criterion) {
             let temp = tempfile::tempdir().unwrap();
             let snapshot_dir = temp.path().join("snapshot");
             let meta = metadata();
-            let mut store = SnapshotStore::create(&snapshot_dir, meta).unwrap();
+            let store = SnapshotStore::create(&snapshot_dir, meta).unwrap();
 
             for i in 0..100u32 {
                 let content = format!("bench data {i}\n").repeat(10);

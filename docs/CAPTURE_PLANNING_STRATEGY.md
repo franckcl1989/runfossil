@@ -10,6 +10,11 @@ The planner is not a diagnostic engine. It does not decide what caused the
 incident. It decides how to preserve the most useful evidence with the least
 production impact.
 
+The planner's target is complete accounting of in-scope Linux runtime evidence
+within the configured collection budget. It must prefer explicit limited,
+skipped, unsupported, `not_present`, `not_found`, failed, or truncated outcomes
+over overrunning the budget to make the snapshot appear more complete.
+
 ## Planning Principles
 
 - Capture core evidence first.
@@ -42,7 +47,7 @@ Probe gathers low-cost facts needed to build the plan:
 - PSI pressure where available.
 - load average and uptime.
 - service manager indicators.
-- container runtime socket indicators.
+- container daemon socket indicators.
 - journald, kmsg, pstore, debugfs, tracefs, bpffs, securityfs availability.
 
 Probe must be bounded. It should not deeply traverse dynamic trees.
@@ -189,6 +194,7 @@ Examples:
 /sys/fs/pstore
 /sys/class/hwmon
 /sys/class/thermal
+/proc/<pid>/smaps_rollup
 netlink link/address/route/neighbor dumps
 ```
 
@@ -201,11 +207,10 @@ Examples:
 ```text
 /proc/<pid>/fdinfo
 /proc/<pid>/maps
-/proc/<pid>/smaps_rollup
 /proc/<pid>/task
 /proc/<pid>/task/<tid>/status
 service manager unit state
-container runtime object state
+container-related cgroup and namespace evidence
 socket diagnostic netlink dumps
 cgroup subtree deep traversal
 bounded system event windows
@@ -314,6 +319,18 @@ unstable
 
 The budget model should be visible in `plan.json` and `meta/limits.json`.
 
+### Budget Invariant
+
+Configured budgets are hard ceilings for incident-time capture. The planner and
+executor may reduce depth, file count, byte windows, concurrency, or lower
+priority work when host scale, pressure, or execution feedback indicates that
+the full candidate set will not fit.
+
+Budget exhaustion is an evidence outcome, not an excuse to overrun. When the
+budget prevents additional capture, the plan and manifest should preserve the
+reason through `limited`, `skipped_by_policy`, `size_limited`, `truncated`,
+`timeout`, or related outcomes.
+
 ## Source-Level Strategies
 
 ### /proc
@@ -341,8 +358,8 @@ Strategy:
 
 - Capture runtime metadata and socket presence.
 - Avoid copying large runtime payload trees blindly.
-- Prioritize systemd, user session, udev, D-Bus, resolver, and container runtime
-  metadata.
+- Prioritize systemd, user session, udev, D-Bus, resolver, and runtime socket
+  presence metadata.
 
 ### /dev
 
@@ -380,14 +397,15 @@ Strategy:
 - Avoid external commands.
 - Record unsupported state clearly until native collection exists.
 
-### Container Runtime
+### Container-Related Host Evidence
 
 Strategy:
 
-- Detect local runtime sockets.
-- Capture runtime daemon, container object, process, cgroup, namespace, resource,
-  event, and bounded log state through native socket protocols.
-- Treat each runtime as optional and independently unsupported until implemented.
+- Detect local runtime sockets as host probes and capability metadata.
+- Capture container-related process, cgroup, namespace, and resource evidence
+  through the existing `/proc`, `/sys/fs/cgroup`, and `/run` source families.
+- Do not enumerate Docker, containerd, CRI-O, or other daemon APIs in the core
+  scope unless the Source Taxonomy and Coverage Decision Matrix change first.
 
 ## Skip Policy
 

@@ -22,7 +22,7 @@ fn create_test_snapshot(base: &Path) {
         },
     };
 
-    let mut store = SnapshotStore::create(&snapshot_dir, metadata).unwrap();
+    let store = SnapshotStore::create(&snapshot_dir, metadata).unwrap();
 
     for i in 0..100u32 {
         let content = format!("bench file {i:04}\n").repeat(50);
@@ -85,7 +85,7 @@ fn bench_pack_large(c: &mut Criterion) {
     };
 
     {
-        let mut store = SnapshotStore::create(&snapshot_dir, metadata).unwrap();
+        let store = SnapshotStore::create(&snapshot_dir, metadata).unwrap();
         for i in 0..500u32 {
             let content = format!("large benchmark file {i:05}\n").repeat(100);
             let path = format!("raw/large/file_{i}.dat");

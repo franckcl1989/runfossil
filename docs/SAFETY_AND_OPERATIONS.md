@@ -117,6 +117,10 @@ The capture engine should have global limits:
 Limits are part of evidence quality. They must be recorded so analysts know why
 an object is missing or truncated.
 
+The configured collection budget is a safety boundary. Capture completeness is
+defined as useful and accountable evidence within that boundary, not as
+unbounded collection of every byte that might be available from the host.
+
 ## Output Safety
 
 The snapshot directory should be created with restrictive permissions:
@@ -251,8 +255,8 @@ satisfy every safety constraint that applies to human-written code:
 AI tools following `AGENTS.md`, `AI_DEVELOPMENT_GUIDE.md`, and the relevant
 task-specific documents should produce safe code by construction. When AI
 assistance introduces a change, the same validation commands apply:
-`cargo fmt --check`, `cargo clippy --workspace -- -D warnings`, and
-`cargo test`.
+`cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`,
+`cargo check --workspace --all-targets`, and `cargo test --workspace`.
 
 Code-level AI-specific risks (RK-031 through RK-036) are controlled through workspace
 lint enforcement, clippy disallowed-methods configuration, skill spec

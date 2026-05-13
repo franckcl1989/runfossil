@@ -49,7 +49,7 @@ fn metadata_line(path: &Path, meta: &fs::Metadata) -> String {
     )
 }
 
-fn record_dev_top_level(store: &mut SnapshotStore) -> Result<(), StoreError> {
+fn record_dev_top_level(store: &SnapshotStore) -> Result<(), StoreError> {
     let dev_dir = Path::new("/dev");
     let limits = BoundedTraversalLimits::new(2048, 1, 500);
 
@@ -112,7 +112,7 @@ fn record_dev_top_level(store: &mut SnapshotStore) -> Result<(), StoreError> {
 }
 
 fn collect_dev_symlink_dir(
-    store: &mut SnapshotStore,
+    store: &SnapshotStore,
     dir_path: &Path,
     domain: &str,
 ) -> Result<(), StoreError> {
@@ -196,7 +196,7 @@ fn collect_dev_symlink_dir(
     Ok(())
 }
 
-fn collect_pseudo_devices(store: &mut SnapshotStore) -> Result<(), StoreError> {
+fn collect_pseudo_devices(store: &SnapshotStore) -> Result<(), StoreError> {
     let pseudo_devices: &[(&str, &str)] = &[
         ("null", "null"),
         ("zero", "zero"),
@@ -257,7 +257,7 @@ fn collect_pseudo_devices(store: &mut SnapshotStore) -> Result<(), StoreError> {
     Ok(())
 }
 
-fn collect_loop_devices(store: &mut SnapshotStore) -> Result<(), StoreError> {
+fn collect_loop_devices(store: &SnapshotStore) -> Result<(), StoreError> {
     let dev_dir = Path::new("/dev");
     let limits = BoundedTraversalLimits::new(256, 1, 200);
 
@@ -338,7 +338,7 @@ fn collect_loop_devices(store: &mut SnapshotStore) -> Result<(), StoreError> {
 }
 
 /// Collects all `/dev` metadata and symlink-target evidence.
-pub(crate) fn collect_dev(store: &mut SnapshotStore) -> Result<(), StoreError> {
+pub(crate) fn collect_dev(store: &SnapshotStore) -> Result<(), StoreError> {
     record_dev_top_level(store)?;
     collect_dev_symlink_dir(store, Path::new("/dev/block"), "block")?;
     collect_dev_symlink_dir(store, Path::new("/dev/disk"), "disk")?;

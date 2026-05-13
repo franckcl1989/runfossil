@@ -40,12 +40,17 @@ kernel documentation.
 
 Included sources are Linux system-level runtime data that can change or
 disappear after reboot, process exit, connection close, cgroup removal, namespace
-change, device change, kernel object reclamation, or service/container runtime
-change.
+change, device change, kernel object reclamation, service state change, or
+container-related process, cgroup, or namespace change.
 
 Excluded sources are static configuration, application data, language runtimes,
 database internals, Kubernetes control-plane state, cloud APIs, package manager
 databases, source code, and full historical logs.
+
+Container-related host evidence is represented through existing `/proc`, `/sys`,
+`/run`, and `/dev` source families. Container daemon API enumeration, container
+image contents, and orchestration control-plane state are not independent L1
+sources in the current core scope.
 
 ## Collection Strategy: Auto-Discovery with Blacklist
 
@@ -109,14 +114,19 @@ directory, collect all files except blacklisted entries.
 - `clear_refs` — **write interface** (mutates kernel state)
 - `oom_adj` — **write interface** (deprecated, mutates OOM score)
 - `coredump_filter` — **write interface**
-- `attr/*` — security attribute **write interfaces**
+- `attr/*` — security attribute write interfaces, except read-only evidence
+  such as `attr/current`
 - `uid_map`, `gid_map`, `projid_map` — **write interfaces** (namespace config)
 - `setgroups` — **write interface**
 - `reclaim` — **write interface**
+- `smaps` — per-process memory map details, very large; P4 limited, selected PIDs only
+- `maps` — per-process memory layout; P3 limited, selected PIDs only
+- `numa_maps` — per-process NUMA memory policy; P3 limited, NUMA-aware hosts only
+
+**Auto-discovered** (not blacklisted, collected for all PIDs):
+- `smaps_rollup` — aggregate smaps (~5 KB), safe to collect at P2
 
 **Deprioritized** (collect with tighter limits / lower priority):
-- `smaps` — per-process memory map details (very large)
-- `smaps_rollup` — aggregate smaps (collect at P2)
 - `task/<tid>/children` — nested process hierarchy
 
 ### L2 Domains
@@ -225,11 +235,10 @@ device directory, discover all attribute files. Do not read device content (inod
 metadata only for device nodes).
 
 **Global blacklist** (write interfaces that mutate kernel state):
-- `uevent` — reading may consume a uevent
 - `bind`, `unbind` — driver binding control
 - `probe` — trigger device probe
 - `reset`, `trigger` — device reset
-- `store`, `config` — write-only configuration
+- `store` — write-only configuration
 - `state`, `disk` (under `/sys/power/`) — may trigger suspend/hibernate
 - `tun_flags` — virtio network write interface
 
@@ -412,6 +421,11 @@ Collection policy: **Auto-discover** — scan `/run` root for discrete files,
 collect all. Subdirectories traversed with bounded depth (max 3) and file count
 limits. Socket files recorded as metadata only (existence + permissions).
 
+**Blacklist** (application-layer container engine sockets, not Linux kernel
+runtime evidence):
+- `docker.sock`, `containerd`, `crio`, `runc`, `podman`, `kata-containers`,
+  `gvisor`
+
 ### L2 Domains
 
 #### 3.1 systemd runtime (systemd_runtime)
@@ -438,6 +452,11 @@ Runtime process ID evidence from running daemons.
 
 Path: `/run/*.pid` (scanned by glob)
 
+#### 3.5 Login and mount runtime records (login_mount_runtime)
+Boot-lifetime login, failed-login, and user mount records.
+
+Path: `/run/utmp`, `/run/faillock/`, `/run/mount/utab`
+
 #### 3.6 udev runtime (udev_runtime)
 Device runtime database and queue state.
 
@@ -456,9 +475,12 @@ Path: `/run/systemd/resolve/`
 #### 3.9 Other /run paths (misc_run)
 Additional runtime state files.
 
-Path: `/run/utmp` (login records), `/run/faillock/` (login failures),
-`/run/mount/utab` (user mounts),
-`/run/NetworkManager/`, `/run/chrony/`
+Path: `/run/NetworkManager/`, `/run/chrony/`
+
+Container runtime sockets and top-level runtime directories are metadata
+evidence only. Daemon API enumeration and socket communication remain excluded,
+but socket or directory presence is useful host-side evidence for incident
+reconstruction.
 
 ---
 

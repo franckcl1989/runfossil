@@ -14,7 +14,7 @@ const MAX_RESPONSE_BYTES: u64 = 2_097_152;
 
 /// Collects logind session state via D-Bus ListSessions.
 pub(crate) fn collect_logind_state(
-    store: &mut SnapshotStore,
+    store: &SnapshotStore,
     stream: &mut UnixStream,
 ) -> Result<(), StoreError> {
     collect_list_sessions(store, stream)?;
@@ -23,10 +23,7 @@ pub(crate) fn collect_logind_state(
     Ok(())
 }
 
-fn collect_list_sessions(
-    store: &mut SnapshotStore,
-    stream: &mut UnixStream,
-) -> Result<(), StoreError> {
+fn collect_list_sessions(store: &SnapshotStore, stream: &mut UnixStream) -> Result<(), StoreError> {
     let dest = "org.freedesktop.login1";
     let path = "/org/freedesktop/login1";
     let iface = "org.freedesktop.login1.Manager";
@@ -78,7 +75,7 @@ fn collect_list_sessions(
 }
 
 fn collect_session_details(
-    store: &mut SnapshotStore,
+    store: &SnapshotStore,
     stream: &mut UnixStream,
 ) -> Result<(), StoreError> {
     let dest = "org.freedesktop.login1";
@@ -137,10 +134,7 @@ fn collect_session_details(
     Ok(())
 }
 
-fn collect_user_sessions(
-    store: &mut SnapshotStore,
-    stream: &mut UnixStream,
-) -> Result<(), StoreError> {
+fn collect_user_sessions(store: &SnapshotStore, stream: &mut UnixStream) -> Result<(), StoreError> {
     let dest = "org.freedesktop.login1";
     let path = "/org/freedesktop/login1";
     let iface = "org.freedesktop.login1.Manager";

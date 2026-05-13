@@ -12,6 +12,14 @@ to replace observability, metrics, tracing, log aggregation, crash reporting, or
 application-specific debug tooling. It fills the gap between "the host is broken
 right now" and "we still need the runtime scene after recovery."
 
+The product target is a complete, comprehensive, and effective raw snapshot from
+the Linux operating-system runtime point of view, bounded by the configured
+collection budget. "Complete" does not mean unbounded byte-for-byte copying of
+every possible source. It means every in-scope runtime source family is either
+captured or explicitly accounted for with a recorded reason such as not present,
+not found, unsupported, skipped by policy, limited, timed out, failed, or
+truncated.
+
 The project is designed for AI-driven development. Design documents, AI workflow
 instructions, skill specifications, and prompt templates are maintained as
 first-class project artifacts. AI coding agents must follow `AGENTS.md` as the
@@ -99,6 +107,8 @@ than treating them as exceptional tool behavior.
 The collector must avoid unbounded recursion, unbounded file reads, expensive
 global locks, destructive kernel interfaces, and long blocking operations. Every
 capture task must have explicit limits for time, bytes, file count, and depth.
+The configured collection budget is a hard ceiling, not a preference; preserving
+lower-priority evidence must yield to budget enforcement.
 
 ### Prefer Raw Data Over Interpretation
 
@@ -119,6 +129,22 @@ The snapshot must record what was attempted, what succeeded, what failed, why it
 failed, what was skipped, and what limits were applied. Later analysis should be
 able to reconstruct the capture plan without access to the original host.
 
+### Define Useful Completeness
+
+Snapshot completeness is measured by accountability and forensic usefulness
+within the Linux runtime scope:
+
+- Complete: all in-scope source families are captured or have explicit planner
+  and manifest outcomes.
+- Comprehensive: the capture spans the operating-system runtime surface needed
+  for incident reconstruction, including system, process, network, storage,
+  cgroup, service, security, crash, hardware-adjacent, and container-related
+  host evidence.
+- Effective: raw evidence, limits, timestamps, failures, and skips are
+  preserved well enough for offline fault reconstruction and root-cause work.
+- Budget-bound: no source, traversal, event window, or deepening rule may exceed
+  the configured capture budget in order to improve apparent completeness.
+
 ## Scope
 
 ### Included
@@ -134,13 +160,15 @@ able to reconstruct the capture plan without access to the original host.
 - Service manager state through native protocol support.
 - User, login, session, security, audit, and time synchronization state.
 - Crash dump metadata and persistent crash records.
-- Local container runtime state through native socket/protocol support.
+- Container-related host evidence through procfs, cgroupfs, namespaces, and
+  runtime socket presence metadata.
 
 ### Excluded
 
 - Static system configuration as a primary target.
 - Application configuration and business data.
-- Source code, package manager databases, and container image contents.
+- Source code, package manager databases, container daemon API enumeration, and
+  container image contents.
 - Database internal runtime state.
 - JVM, Go, Python, Node.js, .NET, BEAM, or other language-runtime state.
 - Application debug endpoints and application metrics systems.

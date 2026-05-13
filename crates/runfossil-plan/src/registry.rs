@@ -1058,6 +1058,17 @@ pub(crate) fn coverage_registry() -> Vec<CoverageUnit> {
     ));
 
     units.push(CoverageUnit::new(
+        "proc.process_smaps",
+        SourceSlug::Proc,
+        "process",
+        "<pid>/smaps",
+        CoverageDecision::Limited,
+        Priority::P4,
+        ObjectKind::File,
+        true,
+    ));
+
+    units.push(CoverageUnit::new(
         "proc.process_smaps_rollup",
         SourceSlug::Proc,
         "process",
@@ -1161,8 +1172,8 @@ pub(crate) fn coverage_registry() -> Vec<CoverageUnit> {
         SourceSlug::Proc,
         "modules",
         "kallsyms",
-        CoverageDecision::Limited,
-        Priority::P4,
+        CoverageDecision::Exclude,
+        Priority::NotApplicable,
         ObjectKind::File,
         true,
     ));
@@ -1507,6 +1518,16 @@ mod tests {
         assert!(decisions.contains(&CoverageDecision::Collect));
         assert!(decisions.contains(&CoverageDecision::Conditional));
         assert!(decisions.contains(&CoverageDecision::Limited));
+    }
+
+    #[test]
+    fn kallsyms_is_excluded_by_policy() {
+        let units = coverage_registry();
+        let Some(kallsyms) = units.iter().find(|unit| unit.id == "proc.kallsyms") else {
+            panic!("kallsyms coverage unit");
+        };
+        assert_eq!(kallsyms.coverage_decision, CoverageDecision::Exclude);
+        assert_eq!(kallsyms.priority, Priority::NotApplicable);
     }
 
     #[test]

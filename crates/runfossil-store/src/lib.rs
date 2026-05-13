@@ -129,8 +129,20 @@ pub(crate) fn create_dir(path: &Path) -> Result<(), StoreError> {
 }
 
 pub(crate) fn create_dir_all(path: &Path) -> Result<(), StoreError> {
-    fs::create_dir_all(path)
-        .map_err(|source| StoreError::io("create snapshot directory tree", source))?;
+    let mut current = PathBuf::new();
+    for component in path.components() {
+        current.push(component.as_os_str());
+        if current.exists() {
+            continue;
+        }
+        match fs::create_dir(&current) {
+            Ok(()) => set_dir_permissions(&current)?,
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
+            Err(source) => {
+                return Err(StoreError::io("create snapshot directory tree", source));
+            }
+        }
+    }
     set_dir_permissions(path)?;
     Ok(())
 }
@@ -138,7 +150,7 @@ pub(crate) fn create_dir_all(path: &Path) -> Result<(), StoreError> {
 pub(crate) fn write_atomic(path: &Path, contents: &str) -> Result<(), StoreError> {
     let tmp_path = temporary_path(path)?;
     {
-        let mut file = File::create(&tmp_path)
+        let mut file = create_private_file(&tmp_path)
             .map_err(|source| StoreError::io("create temporary file", source))?;
         file.write_all(contents.as_bytes())
             .map_err(|source| StoreError::io("write temporary file", source))?;
@@ -153,7 +165,7 @@ pub(crate) fn write_atomic(path: &Path, contents: &str) -> Result<(), StoreError
 pub(crate) fn write_atomic_bytes(path: &Path, contents: &[u8]) -> Result<(), StoreError> {
     let tmp_path = temporary_path(path)?;
     {
-        let mut file = File::create(&tmp_path)
+        let mut file = create_private_file(&tmp_path)
             .map_err(|source| StoreError::io("create temporary file", source))?;
         file.write_all(contents)
             .map_err(|source| StoreError::io("write temporary file", source))?;
@@ -166,14 +178,33 @@ pub(crate) fn write_atomic_bytes(path: &Path, contents: &[u8]) -> Result<(), Sto
 }
 
 pub(crate) fn append_line(path: &Path, line: &str) -> Result<(), StoreError> {
-    let mut file = OpenOptions::new()
-        .create(true)
-        .append(true)
+    let mut options = OpenOptions::new();
+    options.create(true).append(true);
+    configure_private_file(&mut options);
+    let mut file = options
         .open(path)
         .map_err(|source| StoreError::io("open file for append", source))?;
+    set_file_permissions(path)?;
     writeln!(file, "{line}").map_err(|source| StoreError::io("append to file", source))?;
     Ok(())
 }
+
+fn create_private_file(path: &Path) -> io::Result<File> {
+    let mut options = OpenOptions::new();
+    options.create(true).write(true).truncate(true);
+    configure_private_file(&mut options);
+    options.open(path)
+}
+
+#[cfg(unix)]
+fn configure_private_file(options: &mut OpenOptions) {
+    use std::os::unix::fs::OpenOptionsExt;
+
+    options.mode(0o600);
+}
+
+#[cfg(not(unix))]
+fn configure_private_file(_options: &mut OpenOptions) {}
 
 pub(crate) fn temporary_path(path: &Path) -> Result<PathBuf, StoreError> {
     let file_name = path.file_name().and_then(std::ffi::OsStr::to_str).ok_or(

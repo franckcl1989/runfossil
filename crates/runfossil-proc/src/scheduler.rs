@@ -19,7 +19,7 @@ const SCHEDULER_ROOTS: &[(&str, &str)] = &[
     ("fcron", "/var/spool/fcron"),
 ];
 
-pub(crate) fn collect_scheduler(store: &mut SnapshotStore) -> Result<(), StoreError> {
+pub(crate) fn collect_scheduler(store: &SnapshotStore) -> Result<(), StoreError> {
     let traversal_limits = BoundedTraversalLimits::new(64, 1, 3000);
     let read_limits = BoundedReadLimits::new(256 * 1024, 3000);
 

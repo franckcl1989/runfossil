@@ -22,7 +22,7 @@ const O_NONBLOCK: i32 = 0o4000;
 /// as raw binary and written to `raw/kernel/kmsg.window`. If `/dev/kmsg` is
 /// not present (e.g., kernel not configured with CONFIG_PRINTK), a
 /// `not_found` entry is recorded.
-pub(crate) fn collect_kmsg(store: &mut SnapshotStore) -> Result<(), StoreError> {
+pub(crate) fn collect_kmsg(store: &SnapshotStore) -> Result<(), StoreError> {
     let kmsg_path = Path::new("/dev/kmsg");
     if !kmsg_path.exists() {
         let entry = ManifestEntry::new(

@@ -16,6 +16,8 @@ baseline changes. For the most recent pass/fail results, see
 ## Scope Gate
 
 - [ ] The project remains a Linux runtime raw snapshot tool.
+- [ ] Snapshot completeness remains defined as accountable in-scope Linux
+      runtime evidence within configured capture budgets.
 - [ ] Application data, business data, language runtime internals, database
       internals, Kubernetes control-plane state, cloud control-plane APIs, and
       full historical logs remain outside core scope.
@@ -41,8 +43,8 @@ baseline changes. For the most recent pass/fail results, see
 
 - [ ] No collector decision depends on external command execution.
 - [ ] Sources that require command-line tools today are marked `deferred-native`.
-- [ ] Native netlink, native socket, native protocol, and bounded filesystem
-      collection modes are preferred.
+- [ ] Native netlink, native protocol, and bounded filesystem collection modes
+      are preferred.
 - [ ] Vendor or hardware-management features without safe native designs remain
       deferred.
 
@@ -68,6 +70,8 @@ baseline changes. For the most recent pass/fail results, see
 - [ ] Planner phases remain probe, score, budget, execute.
 - [ ] Task priorities P0 through P4 remain meaningful.
 - [ ] Every task has timeout, byte, file, depth, and concurrency limits.
+- [ ] Configured budgets are treated as hard ceilings rather than advisory
+      targets.
 - [ ] Planner decisions can be explained offline from `plan.json`.
 - [ ] High pressure reduces deep work instead of disabling capture.
 - [ ] Incident signals deepen relevant source families only.

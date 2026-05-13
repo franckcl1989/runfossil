@@ -8,7 +8,7 @@ use runfossil_fs::{BoundedReadLimits, read_file_bounded};
 use runfossil_store::{ManifestEntry, ObjectLimits, SnapshotStore, StoreError};
 
 /// Collects system clock and time synchronization state.
-pub(crate) fn collect_time_state(store: &mut SnapshotStore) -> Result<(), StoreError> {
+pub(crate) fn collect_time_state(store: &SnapshotStore) -> Result<(), StoreError> {
     collect_uptime(store)?;
     record_btime(store)?;
     collect_localtime(store)?;
@@ -16,7 +16,7 @@ pub(crate) fn collect_time_state(store: &mut SnapshotStore) -> Result<(), StoreE
     Ok(())
 }
 
-fn collect_uptime(store: &mut SnapshotStore) -> Result<(), StoreError> {
+fn collect_uptime(store: &SnapshotStore) -> Result<(), StoreError> {
     let limits = BoundedReadLimits::new(256, 50);
     let source = Path::new("/proc/uptime");
 
@@ -59,7 +59,7 @@ fn collect_uptime(store: &mut SnapshotStore) -> Result<(), StoreError> {
     Ok(())
 }
 
-fn record_btime(store: &mut SnapshotStore) -> Result<(), StoreError> {
+fn record_btime(store: &SnapshotStore) -> Result<(), StoreError> {
     let limits = BoundedReadLimits::new(4_096, 50);
     let source = Path::new("/proc/stat");
 
@@ -118,7 +118,7 @@ fn record_btime(store: &mut SnapshotStore) -> Result<(), StoreError> {
     Ok(())
 }
 
-fn collect_localtime(store: &mut SnapshotStore) -> Result<(), StoreError> {
+fn collect_localtime(store: &SnapshotStore) -> Result<(), StoreError> {
     let loc = Path::new("/etc/localtime");
 
     if !loc.exists() {
@@ -176,7 +176,7 @@ fn collect_localtime(store: &mut SnapshotStore) -> Result<(), StoreError> {
     Ok(())
 }
 
-fn collect_timesync_status(store: &mut SnapshotStore) -> Result<(), StoreError> {
+fn collect_timesync_status(store: &SnapshotStore) -> Result<(), StoreError> {
     let timesync_dir = Path::new("/run/systemd/timesync");
 
     if !timesync_dir.exists() {

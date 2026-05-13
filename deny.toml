@@ -27,10 +27,6 @@ name = "runfossil-core"
 allow = ["MIT"]
 
 [[licenses.exceptions]]
-name = "runfossil-container"
-allow = ["MIT"]
-
-[[licenses.exceptions]]
 name = "runfossil-fs"
 allow = ["MIT"]
 

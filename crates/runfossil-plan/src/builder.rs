@@ -137,12 +137,12 @@ fn source_present(unit: &CoverageUnit, probe: &HostProbe) -> bool {
         SourceSlug::Kernel => true,
         SourceSlug::Netlink => probe.root,
         SourceSlug::Service => probe.systemd_detected,
-        SourceSlug::Logs => probe.systemd_detected,
+        SourceSlug::Logs => true,
         SourceSlug::Sessions => probe.systemd_detected,
         SourceSlug::Time => true,
         SourceSlug::Security => probe.root,
         SourceSlug::Scheduler => true,
-        SourceSlug::Crash => probe.pstore_available,
+        SourceSlug::Crash => true,
         SourceSlug::Hardware => true,
     }
 }
@@ -262,7 +262,10 @@ fn compute_limits(
         Priority::NotApplicable => (0, 0, 0, 0),
     };
 
-    if decision == PlanDecision::Limited || decision == PlanDecision::SkippedByPolicy {
+    if matches!(
+        decision,
+        PlanDecision::SkippedByPolicy | PlanDecision::Unsupported | PlanDecision::NotPresent
+    ) {
         return TaskLimits::new(0, 0, 0, 0);
     }
 
@@ -279,14 +282,33 @@ fn compute_limits(
         Scale::Large => 0.5,
     };
 
-    let factor = f64::min(pressure_factor, scale_factor);
+    let mut factor = f64::min(pressure_factor, scale_factor);
+    if decision == PlanDecision::Limited {
+        factor = factor.min(0.5);
+    }
 
-    let max_bytes = (base_bytes as f64 * factor) as u64;
-    let timeout_ms = (base_timeout_ms as f64 * factor) as u64;
-    let max_files = (base_files as f64 * factor) as u64;
-    let max_depth = (base_depth as f64 * factor) as u32;
+    let max_bytes = scaled_limit(base_bytes, factor);
+    let timeout_ms = scaled_limit(base_timeout_ms, factor);
+    let max_files = scaled_limit(base_files, factor);
+    let max_depth = scaled_depth(base_depth, factor);
 
     TaskLimits::new(max_bytes, timeout_ms, max_files, max_depth)
+}
+
+fn scaled_limit(value: u64, factor: f64) -> u64 {
+    if value == 0 {
+        0
+    } else {
+        ((value as f64 * factor) as u64).max(1)
+    }
+}
+
+fn scaled_depth(value: u32, factor: f64) -> u32 {
+    if value == 0 {
+        0
+    } else {
+        ((value as f64 * factor) as u32).max(1)
+    }
 }
 
 fn unit_risk(unit: &CoverageUnit) -> RiskLevel {
@@ -442,5 +464,37 @@ mod tests {
                 task.decision
             );
         }
+    }
+
+    #[test]
+    fn logs_remain_schedulable_without_systemd() {
+        let mut probe = small_probe();
+        probe.systemd_detected = false;
+        let plan = build_plan(probe);
+        let log_tasks: Vec<&PlannedTask> = plan
+            .tasks()
+            .iter()
+            .filter(|t| t.source == SourceSlug::Logs)
+            .collect();
+        assert!(!log_tasks.is_empty());
+        assert!(log_tasks.iter().any(|task| matches!(
+            task.decision,
+            PlanDecision::Scheduled | PlanDecision::Limited
+        )));
+    }
+
+    #[test]
+    fn limited_tasks_have_reduced_nonzero_limits() {
+        let plan = build_plan(small_probe());
+        let Some(limited) = plan
+            .tasks()
+            .iter()
+            .find(|task| task.decision == PlanDecision::Limited)
+        else {
+            panic!("at least one limited task");
+        };
+
+        assert!(limited.limits.max_bytes > 0);
+        assert!(limited.limits.timeout_ms > 0);
     }
 }

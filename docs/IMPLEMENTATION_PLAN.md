@@ -86,8 +86,8 @@ Deliverables:
 - `runfossil-store` snapshot directory and manifest foundation.
 - `runfossil-plan` planner model foundation.
 - `runfossil-fs` bounded filesystem helper foundation.
-- `runfossil-proc`, `runfossil-net`, `runfossil-service`, and
-  `runfossil-container` collector crate boundaries.
+- `runfossil-proc`, `runfossil-net`, and `runfossil-service` collector crate
+  boundaries.
 - `runfossil-pack` post-capture packaging and inspection crate boundary.
 - Project-wide `#![forbid(unsafe_code)]` on every project-owned Rust crate.
 - Formatting, lint, build, and test commands.
@@ -201,22 +201,23 @@ Exit criteria:
 - Native D-Bus implementation replaces `systemctl`, `loginctl`, and
   `journalctl` for in-scope service/session capture.
 
-## Milestone 7: Container Runtime State
+## Milestone 7: Container-Related Host Evidence
 
 Status: host-side evidence implemented; daemon API protocols excluded from the
-current kernel-focused scope.
+current core scope.
 
 Deliverables:
 
-- Runtime socket detection.
+- Runtime socket detection and metadata-only recording.
 - Host-side cgroup and namespace container evidence.
-- Container process, resource, namespace, and cgroup evidence from procfs and
-  cgroupfs.
+- Container-related process, resource, namespace, and cgroup evidence from
+  procfs and cgroupfs.
 
 Exit criteria:
 
 - Host-side container evidence is available without invoking container CLIs.
-- Container state is collected from procfs, cgroupfs, and namespace evidence.
+- Container-related state is collected from procfs, cgroupfs, and namespace
+  evidence.
 - Docker, containerd, and CRI-O daemon API enumeration remains out of core scope
   unless the coverage matrix is changed first.
 
@@ -239,7 +240,9 @@ Exit criteria:
 
 ## Milestone 9: Hardening and Release Readiness
 
-Status: automated gates passing; production validation pending manual execution.
+Status: automated gates passing; Rocky Linux production-like validation and
+benchmark results recorded; cross-distribution validation and release signing
+pending external environments.
 
 Deliverables:
 
@@ -253,8 +256,8 @@ Deliverables:
   collectors. **[implemented]**
 - Documentation-to-code consistency audit before release. **[completed]**
 - Production-readiness validation report covering safety, performance,
-  compatibility, and known limitations. **[automated gates pass; production validation
-  requires privileged execution environments]**
+  compatibility, and known limitations. **[Rocky Linux validation recorded;
+  remaining release matrix and signing require external environments]**
 - Safe SIGINT/SIGTERM cancellation through a reviewed third-party signal
   abstraction, without project-owned unsafe code. **[implemented via nix crate]**
 
@@ -272,7 +275,7 @@ Exit criteria:
 - No collector executes external commands. **[verified: zero `std::process::Command`
   usage; enforced by clippy.toml]**
 - Snapshot format remains backward-compatible. **[schema_version preserved; path
-  rules and vocabulary unchanged]**
+  rules and implemented source/status vocabulary aligned]**
 - Benchmarks exist for performance-sensitive operations. **[store and pack benches
   in place]**
 - Stress tests verify bounded behavior under load. **[9 stress tests passing]**
@@ -282,17 +285,16 @@ Exit criteria:
 - Release artifacts have checksum and signature verification records. **[sha256
   generated; signing key held externally]**
 - Root production-like capture, cross-distribution compatibility, and benchmark
-  runs are recorded in the release readiness report. **[pending manual execution
-  in privileged environments]**
+  runs are recorded in the release readiness report. **[Rocky Linux capture and
+  benchmark runs recorded; Debian, Ubuntu, Fedora, and signing pending]**
 - README, AGENTS, AI docs, implementation plan, glossary, requirements, risks,
   and code comments do not claim stale milestone state. **[verified]**
 - Release notes distinguish implemented behavior, exclusions, deferred work, and
   validation actually run. **[pending]**
 
-The automated hardening gates are complete. Remaining work requires privileged
-Linux execution environments (root capture, cross-distribution testing,
-benchmark runs on release hardware). These are recorded as pending in
-[Release Readiness](RELEASE_READINESS.md).
+The automated hardening gates are complete. Remaining work requires external
+release environments for cross-distribution root capture validation and release
+signing. These are recorded as pending in [Release Readiness](RELEASE_READINESS.md).
 
 ## Resolved Design Defaults
 
@@ -304,13 +306,14 @@ These defaults keep implementation work bounded without reopening product scope:
 - Hashes should be computed for manifest/control files and for captured
   file-like payloads when doing so does not delay incident-time capture. Skipped
   hashes must be explicit in manifest object metadata.
-- Native journald or system log support is deferred until dependency and parser
-  risk are reviewed. Kernel ring buffer capture remains the primary early log
-  source.
+- Structured journald parsing or socket protocol support is deferred until
+  dependency and parser risk are reviewed. Bounded local log file windows remain
+  supported where safe, and kernel ring buffer capture remains the primary early
+  log source.
 - Initial netlink scope is link, address, route, and neighbor state. Socket
   diagnostic, conntrack, traffic control, and XFRM state remain conditional.
-- Container delivery is host-side procfs, namespace, and cgroup evidence unless
-  the coverage matrix later accepts native daemon protocols.
+- Container-related delivery is host-side procfs, namespace, and cgroup evidence
+  unless the coverage matrix later accepts native daemon protocols.
 - Hardware management beyond Linux-exposed `/sys` state is deferred until core
   filesystem, procfs, netlink, and snapshot-store behavior is stable.
 - Signal handling must not reintroduce project-owned unsafe code. Graceful

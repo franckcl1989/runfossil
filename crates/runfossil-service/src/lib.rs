@@ -16,11 +16,19 @@ pub const fn source() -> SourceSlug {
     SourceSlug::Service
 }
 
-/// Collects service manager, session, time, and event-log state.
-pub fn collect_service(store: &mut SnapshotStore) -> Result<(), StoreError> {
+/// Collects bounded system event-log windows.
+pub fn collect_logs(store: &SnapshotStore) -> Result<(), StoreError> {
+    logs::collect_log_windows(store)
+}
+
+/// Collects time and synchronization state.
+pub fn collect_time(store: &SnapshotStore) -> Result<(), StoreError> {
+    time_sync::collect_time_state(store)
+}
+
+/// Collects service manager and session state.
+pub fn collect_service(store: &SnapshotStore) -> Result<(), StoreError> {
     record_service_detection(store)?;
-    time_sync::collect_time_state(store)?;
-    logs::collect_log_windows(store)?;
 
     let bus = match dbus::connect_system_bus() {
         Ok(stream) => Some(stream),
@@ -38,7 +46,7 @@ pub fn collect_service(store: &mut SnapshotStore) -> Result<(), StoreError> {
     Ok(())
 }
 
-fn record_service_detection(store: &mut SnapshotStore) -> Result<(), StoreError> {
+fn record_service_detection(store: &SnapshotStore) -> Result<(), StoreError> {
     let detected = systemd::detect_systemd();
     let content = format!(
         "service_manager: systemd\nsystemd_detected: {}\n",
@@ -65,7 +73,7 @@ fn record_service_detection(store: &mut SnapshotStore) -> Result<(), StoreError>
 }
 
 fn record_dbus_unavailable(
-    store: &mut SnapshotStore,
+    store: &SnapshotStore,
     error: &std::io::Error,
 ) -> Result<(), StoreError> {
     let content = format!("dbus_system_bus: unavailable\nerror: {error}\n");

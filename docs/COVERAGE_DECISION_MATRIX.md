@@ -76,7 +76,12 @@ collected. Blacklist entries fall into these categories:
 - **device-content** — reading device nodes may block, stream, or have side
   effects (watchdog, sg*, bsg*, cpu/*/msr)
 - **application-layer** — belongs to application software, not Linux runtime
-  (container engine sockets)
+  (container daemon API payloads, image contents, business data)
+
+Blacklists are reserved for unsafe, destructive, unbounded, or out-of-scope
+objects. High-cost but diagnostically useful objects must use `limited`,
+`conditional`, `metadata-only`, or selected-object policy instead of being
+silently blacklisted.
 
 ---
 
@@ -124,9 +129,13 @@ except blacklisted entries. Symlinks recorded by target resolution.
 
 **Blacklist** (per-process): `mem`, `pagemap`, `clear_refs`, `oom_adj`,
 `coredump_filter`, `uid_map`, `gid_map`, `projid_map`, `setgroups`,
-`reclaim`, `attr/*`
+`reclaim`, attribute write interfaces except read-only `attr/current`
 
-**Deprioritized** (tighter limits): `smaps`
+**Deprioritized** (excluded from auto-discovery; tracked for planned
+explicit collection): `smaps`, `maps`, `numa_maps`
+
+**Auto-discovered**: all other safe regular files, including `smaps_rollup`
+(aggregate, ~5 KB per process)
 
 | Domain | Coverage unit | Decision | Priority | Mode | Rationale |
 |---|---|---|---|---|---|
@@ -139,11 +148,13 @@ except blacklisted entries. Symlinks recorded by target resolution.
 | Process net | `/proc/<pid>/net/*` | collect-auto | P2 | auto-discover | Per-process net namespace |
 | Process mounts | `/proc/<pid>/mounts`, `mountinfo` | collect-auto | P2 | auto-discover | Per-process mount view |
 | Memory maps | `/proc/<pid>/smaps` | limited | P4 | raw-file | Large; selected PIDs only |
-| Memory maps | `/proc/<pid>/smaps_rollup` | collect-auto | P2 | raw-file | Aggregate, lower cost |
-| Memory maps | `/proc/<pid>/maps` | collect-auto | P2 | raw-file | Memory layout |
+| Memory maps | `/proc/<pid>/smaps_rollup` | collect-auto | P2 | raw-file | Aggregate, ~5 KB, safe |
+| Memory maps | `/proc/<pid>/maps` | limited | P3 | raw-file | Valuable but cumulative size can exhaust byte budget; selected PIDs |
+| NUMA maps | `/proc/<pid>/numa_maps` | limited | P3 | raw-file | NUMA-aware hosts only; selected PIDs |
 | Process memory | `/proc/<pid>/mem` | **blacklist** | NA | skip | Process memory image |
 | Page table | `/proc/<pid>/pagemap` | **blacklist** | NA | skip | Large page table dump |
-| Write interfaces | `clear_refs`, `oom_adj`, `attr/*`, etc. | **blacklist** | NA | skip | Mutate kernel state |
+| Process LSM context | `/proc/<pid>/attr/current` | collect-auto | P2 | raw-file | Read-only security context evidence |
+| Write interfaces | `clear_refs`, `oom_adj`, attr write interfaces, etc. | **blacklist** | NA | skip | Mutate kernel state |
 
 ---
 
@@ -171,8 +182,8 @@ files are safe read-only text. No blacklist needed.
 **Strategy**: Bounded-depth recursive scan. For each device directory,
 auto-discover all attribute files. Depth ≤ 4, 256 files/level, 1 MiB/file.
 
-**Global blacklist** (write interfaces): `uevent`, `bind`, `unbind`,
-`probe`, `reset`, `trigger`, `store`, `config`
+**Global blacklist** (write interfaces): `bind`, `unbind`, `probe`, `reset`,
+`trigger`, `store`
 
 **Additional blacklist** (power): `/sys/power/state`, `/sys/power/disk`
 (may trigger suspend/hibernate)
@@ -230,8 +241,8 @@ auto-discover all attribute files. Depth ≤ 4, 256 files/level, 1 MiB/file.
 **Strategy**: Scan `/run` root for discrete files → collect all. Subdirectories
 with bounded depth (3) and file count (64/level). Socket files → metadata only.
 
-No blacklist needed for `/run` — all regular files are safe. Socket files,
-FIFO files, and unusually large trees are bounded by the traversal limits.
+**Blacklist** (application-layer container sockets): `docker.sock`,
+`containerd`, `crio`, `runc`, `podman`, `kata-containers`, `gvisor`
 
 | Domain | Coverage unit | Decision | Priority | Mode | Rationale |
 |---|---|---|---|---|---|
@@ -247,7 +258,7 @@ FIFO files, and unusually large trees are bounded by the traversal limits.
 | User mounts | `/run/mount/utab` | collect-auto | P3 | raw-file | User mount table |
 | NetworkManager | `/run/NetworkManager/` | conditional | P3 | bounded-tree | NM runtime state if present |
 | chrony | `/run/chrony/` | conditional | P3 | bounded-tree | chrony runtime state if present |
-| Application sockets | `/run/docker.sock`, `/run/containerd/`, `/run/crio/`, `/run/runc/`, `/run/podman/`, `/run/kata-containers/`, `/run/gvisor/` | **exclude** | NA | skip | Application-layer container engines; not Linux system runtime |
+| Container runtime presence | `/run/docker.sock`, `/run/containerd/`, `/run/crio/`, `/run/runc/`, `/run/podman/`, `/run/kata-containers/`, `/run/gvisor/` | limited | P3 | metadata-only | Host-side runtime presence evidence; no daemon API enumeration |
 
 ---
 
@@ -427,7 +438,7 @@ These are outside the core Linux runtime snapshot boundary:
 | Static system configuration files | exclude | Not runtime state |
 | Application configuration and business data | exclude | Application scope |
 | Source code and package manager databases | exclude | Static content |
-| Application runtime sockets (Docker, containerd, etc.) | exclude | Application-layer, not Linux system runtime |
+| Container daemon API enumeration (Docker, containerd, etc.) | exclude | Application-layer daemon protocol, not Linux system runtime |
 | Database internal runtime state | exclude | Database-specific scope |
 | Language runtime internals (JVM, Go, Python, etc.) | exclude | Language-specific scope |
 | Application debug endpoints and metrics | exclude | Application observability scope |
